@@ -8,7 +8,7 @@ A high-performance, zero-allocation Go client library for Nigeria's National Dig
 ## Features
 
 - **Zero-Allocation Parsing**: `postcode.Parse()` parses and validates 11-character postcodes with 0 heap escapes (~28ns/op).
-- **Safe & Idiomatic Go**: Fully memory-safe accessors, Go 1.23+ range-over-func iterators (`postcode.ParseSeq`), standard errors (`errors.As`), and functional options.
+- **Safe & Idiomatic Go**: Fully memory-safe accessors, Go range-over-func iterators (`postcode.ParseSeq`), standard errors (`errors.As`), and functional options.
 - **Protocol Conformance**: Built to match the official NIPOST OpenAPI spec (`GET /v1/lookup`, `GET /v1/search/autocomplete`, `GET /v1/search/nearby`, `GET /v1/search/reverse`, and `POST /v1/assembly/assemble`).
 - **Resilient Transport**: Production-tuned HTTP transport with exponential backoff, full jitter, `Retry-After` header support, and safe connection draining.
 - **Pluggable Observability**: Zero external dependencies in the core module, with an optional OpenTelemetry module (`github.com/abcubed3/postcode/otelpostcode`).
@@ -45,7 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 2. Graded postcode lookup (Level 1 is free, Level 2-4 require commercial credits)
+	// 2. Graded postcode lookup (Level 1 is free, Level 2-3 require commercial credits)
 	res, err := client.Lookup(ctx, "EK 01 A03 FK 01", postcode.Level1)
 	if err != nil {
 		var apiErr *postcode.APIError
@@ -63,7 +63,7 @@ func main() {
 	}
 	fmt.Printf("Active segment: %s, Suggestions: %+v\n", suggs.Segment, suggs.Suggestions)
 
-	// 4. Batch streaming parse with Go 1.23+ iterators (0 heap allocations)
+	// 4. Batch streaming parse 
 	records := []string{"EK 01 A03 FK 01", "INVALID_CODE", "FC 02 A09 DB 09"}
 	for p, err := range postcode.ParseSeq(records) {
 		if err != nil {
