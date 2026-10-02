@@ -1,0 +1,19 @@
+# Binaries and outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binaries and coverage
+*.test
+*.out
+cover.html
+
+# OS metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
