@@ -36,9 +36,8 @@
   - [12. API Diagnostics & Rate Limits (`status`)](#12-API-diagnostics--rate-limits-status)
   - [13. Local Mock API Simulator (`serve`)](#13-local-mock-API-simulator-serve)
 - [Production Recipes & Shell Integration](#production-recipes--shell-integration)
-  - [Recipe A: Git Pre-Commit Hook for Address Sanitization](#recipe-a-git-pre-commit-hook-for-address-sanitization)
-  - [Recipe B: Stream Processing with `jq` and `curl`](#recipe-b-stream-processing-with-jq-and-curl)
-  - [Recipe C: Fast DB Data Cleaning in ETL Pipelines](#recipe-c-fast-db-data-cleaning-in-etl-pipelines)
+  - [Recipe A: Stream Processing with `jq` and `curl`](#recipe-a-stream-processing-with-jq-and-curl)
+  - [Recipe B: Fast DB Data Cleaning in ETL Pipelines](#recipe-b-fast-db-data-cleaning-in-etl-pipelines)
 - [Shell Auto-Completion (Bash, Zsh, Fish, PowerShell)](#shell-auto-completion-bash-zsh-fish-powershell)
 - [Troubleshooting & FAQ](#troubleshooting--faq)
 
