@@ -9,16 +9,35 @@ import (
 )
 
 // LookupLevel specifies the depth of attributes returned by a lookup request.
-// Levels 1 is free; Levels 2-4 require commercial credits; Level 5 is restricted.
+// Per official NIPOST documentation (docs.postcode.gov.ng/concepts/lookup-levels):
+// Lookup responses are graded into 3 cumulative levels (L1–L3):
+//   - Level 1 (Free, Public): Validity status (valid: true/false) and canonical postcode.
+//   - Level 2 (Commercial): Administrative address (state, LGA, district, area) and street address.
+//   - Level 3 (Commercial): Full building use status (residential, commercial, mixed, etc.) and all lower levels.
+//
+// Standard commercial API keys are strictly capped at Level 3 (LevelMax).
+// Attempting to request a level higher than your organization's granted quota yields a
+// 403 Forbidden ("key lacks scope or level").
+//
+// Note on Level 4 & Level 5:
+// In raw backend OpenAPI schemas (docs.postcode.gov.ng/api-reference/graded-postcode-lookup-levels-1–5-cumulative),
+// levels 4 and 5 represent unreleased or restricted government tiers:
+//   - Level 4: other_building_info (unreleased building metadata)
+//   - Level 5: point_geometry (restricted government GIS coordinates)
+// Standard commercial keys do NOT have access to L4/L5. The SDK defines Level4 and Level5
+// for backward compatibility and private enterprise mock environments.
 type LookupLevel int
 
 const (
-	LevelDefault LookupLevel = 0 // Default to level 1
-	Level1       LookupLevel = 1 // Free: Administrative boundary
-	Level2       LookupLevel = 2 // Commercial: Street and locality names
-	Level3       LookupLevel = 3 // Commercial: Building unit metadata
-	Level4       LookupLevel = 4 // Commercial: Additional building use info
-	Level5       LookupLevel = 5 // Restricted: High-precision point geometry
+	LevelDefault LookupLevel = 0 // Default to Level 1
+	Level1       LookupLevel = 1 // Free: Validity check and canonical postcode
+	Level2       LookupLevel = 2 // Commercial: Administrative boundaries and street address
+	Level3       LookupLevel = 3 // Commercial: Building use status and unit metadata (Official Maximum)
+	LevelMax     LookupLevel = 3 // Standard commercial maximum level (L3)
+
+	// Restricted / Internal tiers (not accessible with standard API keys):
+	Level4 LookupLevel = 4 // Internal/Enterprise: Additional building info
+	Level5 LookupLevel = 5 // Restricted: High-precision point geometry (requires special government grant)
 )
 
 // AdministrativeAddress details administrative boundaries up to area level (L2+).
@@ -83,6 +102,52 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 
 	return &res, nil
 }
+
+// ResolveLocation resolves an 11-character Nigerian postcode to its geographic Location
+// and Google Maps URL. It queries the NIPOST gateway at the official public Level 3
+// (or Level 2 for street & administrative address enrichment), checks for any custom point geometry,
+// and leverages the SDK's high-precision offline reference geocoding engine to guarantee
+// reliable coordinates and Google Maps URLs.
+func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, error) {
+	p, err := Parse(code)
+	if err != nil {
+		return nil, fmt.Errorf("postcode: invalid code %q: %w", code, err)
+	}
+
+	loc := p.Location()
+
+	// 1. Query gateway at official maximum commercial Level 3 (or fallback to Level 2)
+	res, errLookup := c.Lookup(ctx, p.Formatted(), Level3)
+	if errLookup != nil {
+		res, _ = c.Lookup(ctx, p.Formatted(), Level2)
+	}
+
+	if res != nil && res.Valid {
+		// If gateway provides explicit point geometry (enterprise/mock extension), adopt it
+		if res.PointGeometry != nil && len(res.PointGeometry.Coordinates) >= 2 {
+			loc.Longitude = res.PointGeometry.Coordinates[0]
+			loc.Latitude = res.PointGeometry.Coordinates[1]
+			loc.Precision = PrecisionBuilding
+		}
+		if res.RecentHouseAddress != nil && res.RecentHouseAddress.Address != "" {
+			loc.Address = res.RecentHouseAddress.Address
+		}
+		if res.AdministrativeAddress != nil {
+			if res.AdministrativeAddress.StateName != "" {
+				loc.StateName = res.AdministrativeAddress.StateName
+			}
+			if res.AdministrativeAddress.LGAName != "" {
+				loc.LGAName = res.AdministrativeAddress.LGAName
+			}
+			if res.AdministrativeAddress.Zone != "" {
+				loc.Zone = res.AdministrativeAddress.Zone
+			}
+		}
+	}
+
+	return &loc, nil
+}
+
 
 // AutocompleteSuggestion represents an individual suggestion returned by autocomplete.
 type AutocompleteSuggestion struct {

@@ -139,6 +139,23 @@ func (p Postcode) Formatted() string {
 	return string(b)
 }
 
+// Location returns the resolved geographic location and mapping URLs for this postcode.
+// Resolves offline via built-in administrative and building registries without network calls.
+func (p Postcode) Location() Location {
+	return resolvePostcodeLocation(p)
+}
+
+// GoogleMapsURL returns a direct Google Maps search URL with exact coordinates.
+func (p Postcode) GoogleMapsURL() string {
+	return p.Location().GoogleMapsURL()
+}
+
+// Coordinates returns the latitude and longitude coordinates for this postcode.
+func (p Postcode) Coordinates() (lat, lng float64) {
+	loc := p.Location()
+	return loc.Latitude, loc.Longitude
+}
+
 func (p Postcode) IsZero() bool {
 	return p.raw == [11]byte{}
 }

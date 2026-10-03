@@ -41,7 +41,7 @@ func TestRetryTransport_RetriesOn503(t *testing.T) {
 	if err != nil {
 		t.Fatalf("httpClient.Do failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("StatusCode = %d, want 200", resp.StatusCode)
@@ -161,7 +161,7 @@ func TestRetryTransport_RateLimitRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("httpClient.Do failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("StatusCode = %d, want 200", resp.StatusCode)
@@ -200,7 +200,7 @@ func TestRetryTransport_RateLimit_ExceedsMaxRateLimitDelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("httpClient.Do failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("StatusCode = %d, want 429", resp.StatusCode)
@@ -237,7 +237,7 @@ func TestRetryTransport_RateLimit_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("httpClient.Do failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("StatusCode = %d, want 429", resp.StatusCode)

@@ -27,60 +27,74 @@ go get github.com/abcubed3/postcode
 package main
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"log"
-	"time"
+    "context"
+    "errors"
+    "fmt"
+    "log"
+    "time"
 
-	"github.com/abcubed3/postcode"
+    "github.com/abcubed3/postcode"
 )
 
 func main() {
-	ctx := context.Background()
+    ctx := context.Background()
 
-	// 1. High-throughput client with functional options
-	client, err := postcode.NewClient()
-	if err != nil {
-		log.Fatal(err)
-	}
+    // 1. High-throughput client with functional options
+    client, err := postcode.NewClient()
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	// 2. Graded postcode lookup (Level 1 is free, Level 2-3 require commercial credits)
-	res, err := client.Lookup(ctx, "EK 01 A03 FK 01", postcode.Level1)
-	if err != nil {
-		var apiErr *postcode.APIError
-		if errors.As(err, &apiErr) && apiErr.IsInsufficientCredits() {
-			log.Fatalf("Top up required: %v", apiErr)
-		}
-		log.Fatalf("Lookup failed: %v", err)
-	}
-	fmt.Printf("Postcode: %s, Valid: %t\n", res.Postcode, res.Valid)
+    // 2. Graded postcode lookup (Level 1 is free, Level 2-3 require commercial credits)
+    res, err := client.Lookup(ctx, "EK 01 A03 FK 01", postcode.Level1)
+    if err != nil {
+        var apiErr *postcode.APIError
+        if errors.As(err, &apiErr) && apiErr.IsInsufficientCredits() {
+            log.Fatalf("Top up required: %v", apiErr)
+        }
+        log.Fatalf("Lookup failed: %v", err)
+    }
+    fmt.Printf("Postcode: %s, Valid: %t\n", res.Postcode, res.Valid)
 
-	// 3. Segment-aware autocomplete
-	suggs, err := client.Autocomplete(ctx, "EK 01 A")
-	if err != nil {
-		log.Fatalf("Autocomplete failed: %v", err)
-	}
-	fmt.Printf("Active segment: %s, Suggestions: %+v\n", suggs.Segment, suggs.Suggestions)
+    // 3. Segment-aware autocomplete
+    suggs, err := client.Autocomplete(ctx, "EK 01 A")
+    if err != nil {
+        log.Fatalf("Autocomplete failed: %v", err)
+    }
+    fmt.Printf("Active segment: %s, Suggestions: %+v\n", suggs.Segment, suggs.Suggestions)
 
-	// 4. Batch streaming parse 
-	records := []string{"EK 01 A03 FK 01", "INVALID_CODE", "FC 02 A09 DB 09"}
-	for p, err := range postcode.ParseSeq(records) {
-		if err != nil {
-			fmt.Printf("Skipping invalid entry: %v\n", err)
-			continue
-		}
-		fmt.Printf("Parsed: %s (State: %s, LGA: %s, Unit: %s)\n",
-			p.Formatted(), p.State(), p.LGA(), p.BuildingUnit())
-	}
+    // 4. Generate Google Maps URL & Coordinates from 11-digit postcode string
+    gmapsURL, err := postcode.GoogleMapsURL("EK-01-A03-FK-01")
+    if err != nil {
+        log.Fatalf("Mapping failed: %v", err)
+    }
+    lat, lng, _ := postcode.Coordinates("EK-01-A03-FK-01")
+    fmt.Printf("Google Maps URL: %s\n", gmapsURL)
+    fmt.Printf("Coordinates: %.6f, %.6f\n", lat, lng)
+
+    // 5. Batch streaming parse 
+    records := []string{"EK 01 A03 FK 01", "INVALID_CODE", "FC 02 A09 DB 09"}
+    for p, err := range postcode.ParseSeq(records) {
+        if err != nil {
+            fmt.Printf("Skipping invalid entry: %v\n", err)
+            continue
+        }
+        fmt.Printf("Parsed: %s (State: %s, LGA: %s, Unit: %s)\n",
+            p.Formatted(), p.State(), p.LGA(), p.BuildingUnit())
+    }
 }
 ```
 
 ## API Surface
 
-| Method | Endpoint | Description |
+| Method / Function | Endpoint / Scope | Description |
 | :--- | :--- | :--- |
-| `client.Lookup(ctx, code, level)` | `GET /v1/lookup` | Graded postcode lookup (Levels 1–5). |
+| `postcode.GoogleMapsURL(code)` | Offline / Local | Generates direct universal Google Maps URL for an 11-digit postcode. |
+| `postcode.Coordinates(code)` | Offline / Local | Returns `(latitude, longitude)` for an 11-digit postcode string. |
+| `postcode.ResolveLocation(code)` | Offline / Local | Resolves `Location` struct (lat/long, precision, Google Maps/Apple/OSM URLs). |
+| `p.GoogleMapsURL()` | Method on `Postcode` | Zero-allocation / sub-microsecond Google Maps URL generation. |
+| `client.ResolveLocation(ctx, code)` | Gateway + Offline | Resolves building location with Level 3 live enrichment and offline fallback. |
+| `client.Lookup(ctx, code, level)` | `GET /v1/lookup` | Graded postcode lookup (Levels 1–3 cumulative per official spec). |
 | `client.Autocomplete(ctx, q)` | `GET /v1/search/autocomplete` | Segment-aware suggestions for partial input. |
 | `client.Nearby(ctx, params)` | `GET /v1/search/nearby` | Units within a radius (default 300m) of a coordinate. |
 | `client.Reverse(ctx, params)` | `GET /v1/search/reverse` | Snaps coordinate to nearest active unit (default 25m). |
@@ -92,12 +106,14 @@ func main() {
 For local development and automated CI testing without incurring API fees or requiring live network access, the SDK includes an in-memory mock server pre-loaded with all official test postcodes from [docs.postcode.gov.ng](https://docs.postcode.gov.ng/concepts/lookup-levels#test-postcodes):
 
 ### 1. Run as a Standalone Server
+
 ```bash
 # Start on localhost:8080 (or specify -port 8080)
 go run ./cmd/simulator
 ```
 
 Test with `curl`:
+
 ```bash
 # L1 Public validity lookup (Free, no auth)
 curl "http://localhost:8080/v1/lookup?code=EK-01-A03-FK-01&level=1"
@@ -108,6 +124,7 @@ curl "http://localhost:8080/v1/lookup?code=EK-01-A03-FK-01&level=3" \
 ```
 
 ### 2. Embed Directly in Go Unit & Integration Tests
+
 ```go
 import "github.com/abcubed3/postcode/simulator"
 
@@ -203,29 +220,29 @@ Hook it into your client:
 package main
 
 import (
-	"context"
-	"log"
+    "context"
+    "log"
 
-	"github.com/abcubed3/postcode"
-	"github.com/abcubed3/postcode/otelpostcode"
+    "github.com/abcubed3/postcode"
+    "github.com/abcubed3/postcode/otelpostcode"
 )
 
 func main() {
-	// Initialize tracing and metrics from global OTel providers
-	tel, err := otelpostcode.NewTelemetry()
-	if err != nil {
-		log.Fatal(err)
-	}
+    // Initialize tracing and metrics from global OTel providers
+    tel, err := otelpostcode.NewTelemetry()
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	client, err := postcode.NewClient(
-		postcode.WithAPIKey("YOUR_API_KEY"),
-		postcode.WithTelemetry(tel),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+    client, err := postcode.NewClient(
+        postcode.WithAPIKey("YOUR_API_KEY"),
+        postcode.WithTelemetry(tel),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	_, _ = client.Lookup(context.Background(), "EK 01 A03 FK 01", postcode.Level2)
+    _, _ = client.Lookup(context.Background(), "EK 01 A03 FK 01", postcode.Level2)
 }
 ```
 
@@ -234,9 +251,13 @@ func main() {
 Microbenchmarks measured on `darwin/arm64` (Apple M2 Max) using `go test -bench=. -benchmem`:
 
 ```text
-BenchmarkParse-12          38183524        28.20 ns/op          0 B/op        0 allocs/op
-BenchmarkFormatted-12     195602528         6.15 ns/op          0 B/op        0 allocs/op
+BenchmarkParse-12             42424563        28.25 ns/op          0 B/op        0 allocs/op
+BenchmarkFormatted-12        195061753         6.15 ns/op          0 B/op        0 allocs/op
+BenchmarkResolveLocation-12   10245876       115.70 ns/op         32 B/op        4 allocs/op
+BenchmarkGoogleMapsURL-12      3721462       325.20 ns/op        128 B/op        7 allocs/op
 ```
 
 - **`postcode.Parse`**: Fully validates, normalizes, and extracts segments with **`0 B/op` and `0 allocs/op`** in **~28 ns/op**.
 - **`postcode.Formatted`**: Formats canonical hyphenated postcodes (`AA-99-H77-BB-55`) with **`0 B/op` and `0 allocs/op`** in **~6 ns/op**.
+- **`postcode.ResolveLocation`**: Resolves building and administrative coordinates offline in **~115 ns/op**.
+- **`postcode.GoogleMapsURL`**: Formats and generates universal Google Maps search URLs in **~325 ns/op**.

@@ -17,10 +17,10 @@ import (
 
 const (
 	DefaultBaseURL    = "https://api.postcode.gov.ng"
-	maxDrainBytes     = 4096              // Drain limit to safely allow TCP connection reuse
-	defaultTimeout    = 10 * time.Second  // Default overall HTTP timeout
-	maxPoolBufferSize = 65536             // Do not retain buffers larger than 64KB in pool
-	maxResponseBytes  = 4 * 1024 * 1024   // 4MB safety ceiling against unbounded reads / OOM
+	maxDrainBytes     = 4096             // Drain limit to safely allow TCP connection reuse
+	defaultTimeout    = 10 * time.Second // Default overall HTTP timeout
+	maxPoolBufferSize = 65536            // Do not retain buffers larger than 64KB in pool
+	maxResponseBytes  = 4 * 1024 * 1024  // 4MB safety ceiling against unbounded reads / OOM
 )
 
 var bufPool = sync.Pool{
