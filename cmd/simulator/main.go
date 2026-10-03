@@ -15,9 +15,16 @@ import (
 )
 
 func main() {
-	port := flag.String("port", getEnvOrDefault("PORT", "8080"), "Port for the mock NIPOST server")
+	port := flag.String("port", getEnvOrDefault("PORT", "2340"), "Port for the mock NIPOST server")
 	host := flag.String("host", "localhost", "Host address to bind to")
+	dataFile := flag.String("data", "", "Optional path to custom JSON file containing test postcodes")
 	flag.Parse()
+
+	if *dataFile != "" {
+		if err := simulator.LoadFile(*dataFile); err != nil {
+			log.Fatalf("Failed to load test data from %s: %v", *dataFile, err)
+		}
+	}
 
 	addr := fmt.Sprintf("%s:%s", *host, *port)
 
@@ -30,10 +37,10 @@ func main() {
 	}
 
 	fmt.Println("================================================================================")
-	fmt.Println("🏛️  NIPOST Digital Postcode Gateway - Live Simulator")
+	fmt.Println("🏛️ NIPOST Digital Postcode Gateway - Live Simulator")
 	fmt.Println("📖 Official Reference: https://docs.postcode.gov.ng/concepts/lookup-levels#test-postcodes")
 	fmt.Println("================================================================================")
-	fmt.Printf("🚀 Server running at: http://%s\n", addr)
+	fmt.Printf("🚀 Local Server running at: http://%s\n", addr)
 	fmt.Printf("🩺 Health check:      http://%s/healthz\n", addr)
 	fmt.Println("--------------------------------------------------------------------------------")
 	fmt.Println("📋 Preloaded Official Test Postcodes:")

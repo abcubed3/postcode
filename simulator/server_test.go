@@ -3,6 +3,8 @@ package simulator
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/abcubed3/postcode"
@@ -107,5 +109,77 @@ func TestSimulator_AllTestPostcodesValid(t *testing.T) {
 		if res.AdministrativeAddress == nil || res.AdministrativeAddress.StateName != rec.StateName {
 			t.Errorf("Lookup(%s) state = %v, want %s", rec.Canonical, res.AdministrativeAddress, rec.StateName)
 		}
+	}
+}
+
+func TestSimulator_DynamicLoading(t *testing.T) {
+	defer func() {
+		_ = LoadDefaultPostcodes()
+	}()
+
+	customJSON := `[
+		{
+			"canonical": "LA-01-A01-AA-01",
+			"state_code": "LA",
+			"state_name": "LAGOS",
+			"lga_code": "01",
+			"lga_name": "AGEGE",
+			"district_code": "A01",
+			"district_name": "AGEGE CENTRAL",
+			"area_code": "AA",
+			"area_name": "STATION ROAD",
+			"unit_code": "01",
+			"zone": "SOUTH WEST",
+			"recent_house": "1 STATION ROAD, AGEGE",
+			"building_use": "commercial",
+			"lat": 6.6180,
+			"lng": 3.3209
+		}
+	]`
+
+	tmpFile := filepath.Join(t.TempDir(), "custom.json")
+	if err := os.WriteFile(tmpFile, []byte(customJSON), 0644); err != nil {
+		t.Fatalf("failed to write tmp file: %v", err)
+	}
+
+	if err := LoadFile(tmpFile); err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+
+	if len(TestPostcodes) != 1 {
+		t.Fatalf("expected 1 record after LoadFile, got %d", len(TestPostcodes))
+	}
+	if TestPostcodes[0].Canonical != "LA-01-A01-AA-01" {
+		t.Errorf("expected canonical LA-01-A01-AA-01, got %s", TestPostcodes[0].Canonical)
+	}
+	if TestPostcodes[0].Lat != 6.6180 || TestPostcodes[0].Lng != 3.3209 {
+		t.Errorf("expected lat 6.6180, lng 3.3209, got %f, %f", TestPostcodes[0].Lat, TestPostcodes[0].Lng)
+	}
+
+	srv := NewServer()
+	defer srv.Close()
+
+	client, err := postcode.NewClient(
+		postcode.WithBaseURL(srv.URL),
+		postcode.WithAPIKey("test_key"),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	res, err := client.Lookup(context.Background(), "LA-01-A01-AA-01", postcode.Level2)
+	if err != nil {
+		t.Fatalf("lookup of dynamically loaded postcode failed: %v", err)
+	}
+	if !res.Valid || res.AdministrativeAddress == nil || res.AdministrativeAddress.LGAName != "AGEGE" {
+		t.Errorf("unexpected lookup result: %+v", res)
+	}
+
+	// Test resetting to default embedded postcodes
+	if err := LoadDefaultPostcodes(); err != nil {
+		t.Fatalf("LoadDefaultPostcodes failed: %v", err)
+	}
+	if len(TestPostcodes) <= 1 {
+		t.Errorf("expected multiple default records, got %d", len(TestPostcodes))
 	}
 }

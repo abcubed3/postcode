@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -40,7 +40,7 @@ func NewVersionCmd(v *viper.Viper) *cobra.Command {
 			}
 
 			return PrintOutput(cmd, v, info, func(w io.Writer) error {
-				fmt.Fprintf(w, "postcode version %s (commit: %s, built: %s, %s/%s, %s)\n",
+				_, _ = fmt.Fprintf(w, "postcode version %s (commit: %s, built: %s, %s/%s, %s)\n",
 					info.Version, info.GitCommit, info.BuildDate, info.OS, info.Arch, info.GoVersion)
 				return nil
 			})

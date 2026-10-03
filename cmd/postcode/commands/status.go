@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -73,24 +73,24 @@ and rate limit reset time.`,
 			}
 
 			return PrintOutput(cmd, v, st, func(w io.Writer) error {
-				fmt.Fprintln(w, "============================================================")
-				fmt.Fprintf(w, "Gateway Endpoint: %s\n", st.BaseURL)
+				_, _ = fmt.Fprintln(w, "============================================================")
+				_, _ = fmt.Fprintf(w, "Gateway Endpoint: %s\n", st.BaseURL)
 				if st.Healthy {
-					fmt.Fprintf(w, "Status:           HEALTHY (%.2fms latency)\n", st.LatencyMs)
+					_, _ = fmt.Fprintf(w, "Status:           HEALTHY (%.2fms latency)\n", st.LatencyMs)
 				} else {
-					fmt.Fprintf(w, "Status:           UNREACHABLE / ERROR\n")
-					fmt.Fprintf(w, "Error:            %s\n", st.ServerError)
+					_, _ = fmt.Fprintf(w, "Status:           UNREACHABLE / ERROR\n")
+					_, _ = fmt.Fprintf(w, "Error:            %s\n", st.ServerError)
 				}
 				if st.APIKeySet {
-					fmt.Fprintf(w, "API Key:          CONFIGURED\n")
+					_, _ = fmt.Fprintf(w, "API Key:          CONFIGURED\n")
 				} else {
-					fmt.Fprintf(w, "API Key:          NONE (public free endpoints only)\n")
+					_, _ = fmt.Fprintf(w, "API Key:          NONE (public free endpoints only)\n")
 				}
 				if st.RateLimit != nil {
-					fmt.Fprintf(w, "Rate Quota:       %d / %d remaining\n", st.RateLimit.Remaining, st.RateLimit.Limit)
-					fmt.Fprintf(w, "Reset At:         %s\n", st.RateLimit.ResetAt.Format(time.RFC3339))
+					_, _ = fmt.Fprintf(w, "Rate Quota:       %d / %d remaining\n", st.RateLimit.Remaining, st.RateLimit.Limit)
+					_, _ = fmt.Fprintf(w, "Reset At:         %s\n", st.RateLimit.ResetAt.Format(time.RFC3339))
 				}
-				fmt.Fprintln(w, "============================================================")
+				_, _ = fmt.Fprintln(w, "============================================================")
 				return nil
 			})
 		},

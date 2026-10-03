@@ -1,10 +1,14 @@
 package simulator
 
 import (
+	_ "embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,397 +18,108 @@ import (
 
 // PostcodeRecord stores test metadata for an official test postcode.
 type PostcodeRecord struct {
-	Canonical    string
-	StateCode    string
-	StateName    string
-	LGACode      string
-	LGAName      string
-	DistrictCode string
-	DistrictName string
-	AreaCode     string
-	AreaName     string
-	UnitCode     string
-	Zone         string
-	RecentHouse  string
-	BuildingUse  string
-	Lat          float64
-	Lng          float64
+	Canonical    string  `json:"canonical"`
+	StateCode    string  `json:"state_code"`
+	StateName    string  `json:"state_name"`
+	LGACode      string  `json:"lga_code"`
+	LGAName      string  `json:"lga_name"`
+	DistrictCode string  `json:"district_code"`
+	DistrictName string  `json:"district_name"`
+	AreaCode     string  `json:"area_code"`
+	AreaName     string  `json:"area_name"`
+	UnitCode     string  `json:"unit_code"`
+	Zone         string  `json:"zone"`
+	RecentHouse  string  `json:"recent_house"`
+	BuildingUse  string  `json:"building_use"`
+	Lat          float64 `json:"latitude"`
+	Lng          float64 `json:"longitude"`
 }
 
-// TestPostcodes contains the official test postcodes from docs.postcode.gov.ng.
-var TestPostcodes = []PostcodeRecord{
-	{
-		Canonical:    "EK-01-A03-FK-01",
-		StateCode:    "EK",
-		StateName:    "EKITI",
-		LGACode:      "01",
-		LGAName:      "ADO EKITI",
-		DistrictCode: "A03",
-		DistrictName: "ADO DISTRICT 03",
-		AreaCode:     "FK",
-		AreaName:     "FABIAN HOTEL AXIS",
-		UnitCode:     "01",
-		Zone:         "SOUTH WEST",
-		RecentHouse:  "NTA ROAD, BACK OF FABIAN HOTEL, ADO EKITI",
-		BuildingUse:  "residential",
-		Lat:          7.6211,
-		Lng:          5.2215,
-	},
-	{
-		Canonical:    "AK-11-I61-ZF-12",
-		StateCode:    "AK",
-		StateName:    "AKWA IBOM",
-		LGACode:      "11",
-		LGAName:      "UYO",
-		DistrictCode: "I61",
-		DistrictName: "UYO CENTRAL",
-		AreaCode:     "ZF",
-		AreaName:     "ORON ROAD",
-		UnitCode:     "12",
-		Zone:         "SOUTH SOUTH",
-		RecentHouse:  "12 ORON ROAD, UYO",
-		BuildingUse:  "commercial",
-		Lat:          5.0377,
-		Lng:          7.9128,
-	},
-	{
-		Canonical:    "AK-11-H40-WD-11",
-		StateCode:    "AK",
-		StateName:    "AKWA IBOM",
-		LGACode:      "11",
-		LGAName:      "UYO",
-		DistrictCode: "H40",
-		DistrictName: "IBBESIKPO",
-		AreaCode:     "WD",
-		AreaName:     "WELLINGTON BASSEY WAY",
-		UnitCode:     "11",
-		Zone:         "SOUTH SOUTH",
-		RecentHouse:  "11 WELLINGTON BASSEY WAY, UYO",
-		BuildingUse:  "government",
-		Lat:          5.0333,
-		Lng:          7.9266,
-	},
-	{
-		Canonical:    "BA-02-M67-BL-69",
-		StateCode:    "BA",
-		StateName:    "BAUCHI",
-		LGACode:      "02",
-		LGAName:      "BAUCHI",
-		DistrictCode: "M67",
-		DistrictName: "BAUCHI CENTRAL",
-		AreaCode:     "BL",
-		AreaName:     "BANK ROAD",
-		UnitCode:     "69",
-		Zone:         "NORTH EAST",
-		RecentHouse:  "69 BANK ROAD, GRA, BAUCHI",
-		BuildingUse:  "commercial",
-		Lat:          10.3158,
-		Lng:          9.8442,
-	},
-	{
-		Canonical:    "BA-02-E99-NE-30",
-		StateCode:    "BA",
-		StateName:    "BAUCHI",
-		LGACode:      "02",
-		LGAName:      "BAUCHI",
-		DistrictCode: "E99",
-		DistrictName: "YELWA",
-		AreaCode:     "NE",
-		AreaName:     "NEW GRA",
-		UnitCode:     "30",
-		Zone:         "NORTH EAST",
-		RecentHouse:  "30 AHMADU BELLO WAY, BAUCHI",
-		BuildingUse:  "residential",
-		Lat:          10.3012,
-		Lng:          9.8234,
-	},
-	{
-		Canonical:    "EB-13-G95-FR-90",
-		StateCode:    "EB",
-		StateName:    "EBONYI",
-		LGACode:      "13",
-		LGAName:      "ABAKALIKI",
-		DistrictCode: "G95",
-		DistrictName: "ABAKALIKI URBAN",
-		AreaCode:     "FR",
-		AreaName:     "FESTUS ROAD",
-		UnitCode:     "90",
-		Zone:         "SOUTH EAST",
-		RecentHouse:  "90 OGOJA ROAD, ABAKALIKI",
-		BuildingUse:  "commercial",
-		Lat:          6.3249,
-		Lng:          8.1137,
-	},
-	{
-		Canonical:    "EB-13-I97-AB-30",
-		StateCode:    "EB",
-		StateName:    "EBONYI",
-		LGACode:      "13",
-		LGAName:      "ABAKALIKI",
-		DistrictCode: "I97",
-		DistrictName: "AZUIYIOKPA",
-		AreaCode:     "AB",
-		AreaName:     "AGBANI",
-		UnitCode:     "30",
-		Zone:         "SOUTH EAST",
-		RecentHouse:  "30 WATER WORKS ROAD, ABAKALIKI",
-		BuildingUse:  "residential",
-		Lat:          6.3180,
-		Lng:          8.1022,
-	},
-	{
-		Canonical:    "EN-05-V19-CD-22",
-		StateCode:    "EN",
-		StateName:    "ENUGU",
-		LGACode:      "05",
-		LGAName:      "ENUGU NORTH",
-		DistrictCode: "V19",
-		DistrictName: "INDEPENDENCE LAYOUT",
-		AreaCode:     "CD",
-		AreaName:     "CHIME AVENUE",
-		UnitCode:     "22",
-		Zone:         "SOUTH EAST",
-		RecentHouse:  "22 CHIME AVENUE, NEW HAVEN, ENUGU",
-		BuildingUse:  "commercial",
-		Lat:          6.4584,
-		Lng:          7.5464,
-	},
-	{
-		Canonical:    "EN-05-V19-FT-20",
-		StateCode:    "EN",
-		StateName:    "ENUGU",
-		LGACode:      "05",
-		LGAName:      "ENUGU NORTH",
-		DistrictCode: "V19",
-		DistrictName: "OGUI",
-		AreaCode:     "FT",
-		AreaName:     "FRANKLIN ROAD",
-		UnitCode:     "20",
-		Zone:         "SOUTH EAST",
-		RecentHouse:  "20 OGUI ROAD, ENUGU",
-		BuildingUse:  "residential",
-		Lat:          6.4412,
-		Lng:          7.5023,
-	},
-	{
-		Canonical:    "FC-03-B06-AG-12",
-		StateCode:    "FC",
-		StateName:    "FCT",
-		LGACode:      "03",
-		LGAName:      "ABUJA MUNICIPAL",
-		DistrictCode: "B06",
-		DistrictName: "GARKI II",
-		AreaCode:     "AG",
-		AreaName:     "AREA 11",
-		UnitCode:     "12",
-		Zone:         "NORTH CENTRAL",
-		RecentHouse:  "12 SHEHU SHAGARI WAY, GARKI, ABUJA",
-		BuildingUse:  "government",
-		Lat:          9.0579,
-		Lng:          7.4951,
-	},
-	{
-		Canonical:    "FC-02-B19-RT-30",
-		StateCode:    "FC",
-		StateName:    "FCT",
-		LGACode:      "02",
-		LGAName:      "BWARI",
-		DistrictCode: "B19",
-		DistrictName: "KUBWA",
-		AreaCode:     "RT",
-		AreaName:     "GADO NASKO ROAD",
-		UnitCode:     "30",
-		Zone:         "NORTH CENTRAL",
-		RecentHouse:  "30 GADO NASKO WAY, PHASE 4, KUBWA, ABUJA",
-		BuildingUse:  "residential",
-		Lat:          9.1538,
-		Lng:          7.3220,
-	},
-	{
-		Canonical:    "JI-24-O18-JP-23",
-		StateCode:    "JI",
-		StateName:    "JIGAWA",
-		LGACode:      "24",
-		LGAName:      "DUTSE",
-		DistrictCode: "O18",
-		DistrictName: "DUTSE CENTRAL",
-		AreaCode:     "JP",
-		AreaName:     "JIGAWA POLY RD",
-		UnitCode:     "23",
-		Zone:         "NORTH WEST",
-		RecentHouse:  "23 SANI ABACHA WAY, DUTSE",
-		BuildingUse:  "educational",
-		Lat:          11.7594,
-		Lng:          9.3389,
-	},
-	{
-		Canonical:    "JI-24-N11-VM-58",
-		StateCode:    "JI",
-		StateName:    "JIGAWA",
-		LGACode:      "24",
-		LGAName:      "DUTSE",
-		DistrictCode: "N11",
-		DistrictName: "TAKURA",
-		AreaCode:     "VM",
-		AreaName:     "VILLAGE MARKET",
-		UnitCode:     "58",
-		Zone:         "NORTH WEST",
-		RecentHouse:  "58 KANO-DUTSE EXPRESSWAY, DUTSE",
-		BuildingUse:  "commercial",
-		Lat:          11.7231,
-		Lng:          9.3102,
-	},
-	{
-		Canonical:    "KN-31-F82-WJ-80",
-		StateCode:    "KN",
-		StateName:    "KANO",
-		LGACode:      "31",
-		LGAName:      "KANO MUNICIPAL",
-		DistrictCode: "F82",
-		DistrictName: "NASARAWA",
-		AreaCode:     "WJ",
-		AreaName:     "WEST ROAD",
-		UnitCode:     "80",
-		Zone:         "NORTH WEST",
-		RecentHouse:  "80 BADU ROAD, BOMPAI, KANO",
-		BuildingUse:  "industrial",
-		Lat:          12.0022,
-		Lng:          8.5920,
-	},
-	{
-		Canonical:    "KN-31-D78-IQ-38",
-		StateCode:    "KN",
-		StateName:    "KANO",
-		LGACode:      "31",
-		LGAName:      "KANO MUNICIPAL",
-		DistrictCode: "D78",
-		DistrictName: "FAGGE",
-		AreaCode:     "IQ",
-		AreaName:     "IBRAHIM TAIWO",
-		UnitCode:     "38",
-		Zone:         "NORTH WEST",
-		RecentHouse:  "38 IBRAHIM TAIWO ROAD, KANO",
-		BuildingUse:  "commercial",
-		Lat:          12.0150,
-		Lng:          8.5201,
-	},
-	{
-		Canonical:    "LA-11-W06-TC-10",
-		StateCode:    "LA",
-		StateName:    "LAGOS",
-		LGACode:      "11",
-		LGAName:      "IKEJA",
-		DistrictCode: "W06",
-		DistrictName: "ALAUSA",
-		AreaCode:     "TC",
-		AreaName:     "TOWN CENTRE",
-		UnitCode:     "10",
-		Zone:         "SOUTH WEST",
-		RecentHouse:  "10 OBAFEMI AWOLOWO WAY, IKEJA, LAGOS",
-		BuildingUse:  "commercial",
-		Lat:          6.6018,
-		Lng:          3.3515,
-	},
-	{
-		Canonical:    "LA-11-U34-ZR-63",
-		StateCode:    "LA",
-		StateName:    "LAGOS",
-		LGACode:      "11",
-		LGAName:      "IKEJA",
-		DistrictCode: "U34",
-		DistrictName: "GRA IKEJA",
-		AreaCode:     "ZR",
-		AreaName:     "JOEL OGUNNAIKE",
-		UnitCode:     "63",
-		Zone:         "SOUTH WEST",
-		RecentHouse:  "63 ISAAC JOHN STREET, GRA IKEJA, LAGOS",
-		BuildingUse:  "hospitality",
-		Lat:          6.5891,
-		Lng:          3.3590,
-	},
-	{
-		Canonical:    "NI-09-J67-QC-65",
-		StateCode:    "NI",
-		StateName:    "NIGER",
-		LGACode:      "09",
-		LGAName:      "CHANCHAGA",
-		DistrictCode: "J67",
-		DistrictName: "MINNA CENTRAL",
-		AreaCode:     "QC",
-		AreaName:     "QUEENS COURT",
-		UnitCode:     "65",
-		Zone:         "NORTH CENTRAL",
-		RecentHouse:  "65 BOSSO ROAD, MINNA",
-		BuildingUse:  "commercial",
-		Lat:          9.6139,
-		Lng:          6.5569,
-	},
-	{
-		Canonical:    "NI-09-A75-DA-10",
-		StateCode:    "NI",
-		StateName:    "NIGER",
-		LGACode:      "09",
-		LGAName:      "CHANCHAGA",
-		DistrictCode: "A75",
-		DistrictName: "BOSSO",
-		AreaCode:     "DA",
-		AreaName:     "DUTSEN KURA",
-		UnitCode:     "10",
-		Zone:         "NORTH CENTRAL",
-		RecentHouse:  "10 PAIDA ROAD, MINNA",
-		BuildingUse:  "residential",
-		Lat:          9.6288,
-		Lng:          6.5412,
-	},
-	{
-		Canonical:    "OG-14-T18-BN-16",
-		StateCode:    "OG",
-		StateName:    "OGUN",
-		LGACode:      "14",
-		LGAName:      "ABEOKUTA SOUTH",
-		DistrictCode: "T18",
-		DistrictName: "IBARA",
-		AreaCode:     "BN",
-		AreaName:     "BANKING AXIS",
-		UnitCode:     "16",
-		Zone:         "SOUTH WEST",
-		RecentHouse:  "16 LALUBU STREET, OKE-ILEWO, ABEOKUTA",
-		BuildingUse:  "commercial",
-		Lat:          7.1475,
-		Lng:          3.3619,
-	},
-	{
-		Canonical:    "OG-14-M82-QA-09",
-		StateCode:    "OG",
-		StateName:    "OGUN",
-		LGACode:      "14",
-		LGAName:      "ABEOKUTA SOUTH",
-		DistrictCode: "M82",
-		DistrictName: "OKE-ITOKU",
-		AreaCode:     "QA",
-		AreaName:     "QUARRY ROAD",
-		UnitCode:     "09",
-		Zone:         "SOUTH WEST",
-		RecentHouse:  "9 QUARRY ROAD, ABEOKUTA",
-		BuildingUse:  "residential",
-		Lat:          7.1550,
-		Lng:          3.3480,
-	},
+// UnmarshalJSON supports both "latitude"/"longitude" and "lat"/"lng" field names.
+func (p *PostcodeRecord) UnmarshalJSON(data []byte) error {
+	type Alias PostcodeRecord
+	aux := struct {
+		*Alias
+		AltLat *float64 `json:"lat"`
+		AltLng *float64 `json:"lng"`
+	}{
+		Alias: (*Alias)(p),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if p.Lat == 0 && aux.AltLat != nil {
+		p.Lat = *aux.AltLat
+	}
+	if p.Lng == 0 && aux.AltLng != nil {
+		p.Lng = *aux.AltLng
+	}
+	return nil
 }
 
-var dbByCanonical map[string]PostcodeRecord
-var dbByCompact map[string]PostcodeRecord
+//go:embed data/test_postcodes.json
+var defaultPostcodesJSON []byte
+
+// TestPostcodes contains the active in-memory test postcodes.
+var TestPostcodes []PostcodeRecord
+
+var (
+	dbMu          sync.RWMutex
+	dbByCanonical map[string]PostcodeRecord
+)
 
 func init() {
-	dbByCanonical = make(map[string]PostcodeRecord, len(TestPostcodes))
-	dbByCompact = make(map[string]PostcodeRecord, len(TestPostcodes))
-	for _, rec := range TestPostcodes {
-		dbByCanonical[rec.Canonical] = rec
-		p, err := postcode.Parse(rec.Canonical)
-		if err == nil {
-			dbByCompact[p.Raw()] = rec
-		}
+	if err := LoadDefaultPostcodes(); err != nil {
+		panic(fmt.Sprintf("simulator: failed to parse embedded test_postcodes.json: %v", err))
 	}
+}
+
+// LoadDefaultPostcodes resets TestPostcodes and indexes to the embedded official dataset.
+func LoadDefaultPostcodes() error {
+	return LoadJSON(defaultPostcodesJSON)
+}
+
+// LoadJSON loads test postcodes from raw JSON bytes into the simulator.
+func LoadJSON(data []byte) error {
+	var records []PostcodeRecord
+	if err := json.Unmarshal(data, &records); err != nil {
+		return fmt.Errorf("parsing postcodes JSON: %w", err)
+	}
+	return LoadRecords(records)
+}
+
+// LoadReader reads test postcodes from an io.Reader and updates the simulator.
+func LoadReader(r io.Reader) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("reading postcodes data: %w", err)
+	}
+	return LoadJSON(data)
+}
+
+// LoadFile reads test postcodes from a file path and updates the simulator.
+func LoadFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading file %s: %w", path, err)
+	}
+	return LoadJSON(data)
+}
+
+// LoadRecords sets the active records and rebuilds internal lookup indexes.
+func LoadRecords(records []PostcodeRecord) error {
+	byCanonical := make(map[string]PostcodeRecord, len(records))
+
+	for _, rec := range records {
+		byCanonical[rec.Canonical] = rec
+	}
+
+	dbMu.Lock()
+	TestPostcodes = records
+	dbByCanonical = byCanonical
+	dbMu.Unlock()
+
+	return nil
 }
 
 var (
@@ -530,7 +245,9 @@ func handleLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dbMu.RLock()
 	rec, found := dbByCanonical[p.Formatted()]
+	dbMu.RUnlock()
 	if !found {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
@@ -593,6 +310,9 @@ func handleAutocomplete(w http.ResponseWriter, r *http.Request) {
 		Label string `json:"label"`
 	}
 
+	dbMu.RLock()
+	defer dbMu.RUnlock()
+
 	var suggestions []suggestion
 	seen := make(map[string]bool)
 
@@ -631,6 +351,9 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
 			radius = min(parsed, 300.0)
 		}
 	}
+
+	dbMu.RLock()
+	defer dbMu.RUnlock()
 
 	var results []map[string]any
 	for _, rec := range TestPostcodes {
@@ -671,6 +394,9 @@ func handleReverse(w http.ResponseWriter, r *http.Request) {
 			maxDist = min(parsed, 250.0)
 		}
 	}
+
+	dbMu.RLock()
+	defer dbMu.RUnlock()
 
 	var bestRec *PostcodeRecord
 	bestDist := math.MaxFloat64

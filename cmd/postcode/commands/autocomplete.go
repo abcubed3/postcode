@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -34,10 +34,10 @@ along with valid candidate codes and administrative labels.`,
 			}
 
 			return PrintOutput(cmd, v, resp, func(w io.Writer) error {
-				fmt.Fprintf(w, "Active Segment: %s (Query: %q, %d suggestions)\n", resp.Segment, query, len(resp.Suggestions))
-				fmt.Fprintln(w, "------------------------------------------------------------")
+				_, _ = fmt.Fprintf(w, "Active Segment: %s (Query: %q, %d suggestions)\n", resp.Segment, query, len(resp.Suggestions))
+				_, _ = fmt.Fprintln(w, "------------------------------------------------------------")
 				for _, s := range resp.Suggestions {
-					fmt.Fprintf(w, "  %-12s  %s\n", s.Code, s.Label)
+					_, _ = fmt.Fprintf(w, "  %-12s  %s\n", s.Code, s.Label)
 				}
 				return nil
 			})

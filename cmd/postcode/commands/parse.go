@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -104,25 +104,49 @@ State names, LGA names, capitals, and geopolitical zones from the built-in regis
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
 				for i, r := range res.Results {
 					if i > 0 {
-						fmt.Fprintln(w, "------------------------------------------------------------")
+						if _, err := fmt.Fprintln(w, "------------------------------------------------------------"); err != nil {
+							return err
+						}
 					}
-					fmt.Fprintf(w, "Postcode:      %s\n", r.Formatted)
-					fmt.Fprintf(w, "Compact:       %s\n", r.Compact)
-					fmt.Fprintf(w, "Spaced:        %s\n", r.Spaced)
-					fmt.Fprintf(w, "State:         %s (%s)\n", r.StateName, r.StateCode)
+					if _, err := fmt.Fprintf(w, "Postcode:      %s\n", r.Formatted); err != nil {
+						return err
+					}
+					if _, err := fmt.Fprintf(w, "Compact:       %s\n", r.Compact); err != nil {
+						return err
+					}
+					if _, err := fmt.Fprintf(w, "Spaced:        %s\n", r.Spaced); err != nil {
+						return err
+					}
+					if _, err := fmt.Fprintf(w, "State:         %s (%s)\n", r.StateName, r.StateCode); err != nil {
+						return err
+					}
 					if r.StateCapital != "" {
-						fmt.Fprintf(w, "Capital:       %s\n", r.StateCapital)
+						if _, err := fmt.Fprintf(w, "Capital:       %s\n", r.StateCapital); err != nil {
+							return err
+						}
 					}
 					if r.LGAName != "" {
-						fmt.Fprintf(w, "LGA:           %s (%s)\n", r.LGAName, r.LGACode)
+						if _, err := fmt.Fprintf(w, "LGA:           %s (%s)\n", r.LGAName, r.LGACode); err != nil {
+							return err
+						}
 					} else {
-						fmt.Fprintf(w, "LGA Code:      %s\n", r.LGACode)
+						if _, err := fmt.Fprintf(w, "LGA Code:      %s\n", r.LGACode); err != nil {
+							return err
+						}
 					}
-					fmt.Fprintf(w, "District:      %s\n", r.District)
-					fmt.Fprintf(w, "Area:          %s\n", r.Area)
-					fmt.Fprintf(w, "Building Unit: %s\n", r.Unit)
+					if _, err := fmt.Fprintf(w, "District:      %s\n", r.District); err != nil {
+						return err
+					}
+					if _, err := fmt.Fprintf(w, "Area:          %s\n", r.Area); err != nil {
+						return err
+					}
+					if _, err := fmt.Fprintf(w, "Building Unit: %s\n", r.Unit); err != nil {
+						return err
+					}
 					if r.Zone != "" {
-						fmt.Fprintf(w, "Zone:          %s\n", r.Zone)
+						if _, err := fmt.Fprintf(w, "Zone:          %s\n", r.Zone); err != nil {
+							return err
+						}
 					}
 				}
 				return nil

@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"errors"
@@ -27,9 +27,10 @@ func NewRootCmd() *cobra.Command {
 formatting, geocoding, and querying Nigeria's 11-character digital postcodes.
 
 Built for high-performance offline address processing and full integration with
-the official NIPOST gateway API (docs.postcode.gov.ng).`,
+the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Version:        fmt.Sprintf("%s (commit: %s, built: %s)", Version, GitCommit, BuildDate),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return initConfig(v, cmd)
 		},
@@ -38,9 +39,13 @@ the official NIPOST gateway API (docs.postcode.gov.ng).`,
 	// Persistent flags (inherited by all subcommands)
 	rootCmd.PersistentFlags().String("config", "", "config file path (default is $HOME/.postcode.yaml or ./.postcode.yaml)")
 	rootCmd.PersistentFlags().StringP("output", "o", "text", "output format: text, json, yaml, csv")
-	rootCmd.PersistentFlags().String("api-key", "", "NIPOST gateway API key (env: POSTCODE_API_KEY)")
-	rootCmd.PersistentFlags().String("base-url", "", "NIPOST gateway base URL (env: POSTCODE_BASE_URL)")
-	rootCmd.PersistentFlags().Duration("timeout", 10*time.Second, "gateway HTTP request timeout")
+	rootCmd.PersistentFlags().StringP("apikey", "k", "", "NIPOST postcode API key (env: POSTCODE_API_KEY)")
+	rootCmd.PersistentFlags().String("api", "", "NIPOST postcode api base url (env: POSTCODE_BASE_URL)")
+	rootCmd.PersistentFlags().DurationP("timeout", "t", 10*time.Second, "HTTP request timeout")
+
+	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"text", "json", "yaml", "csv"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	// Command groupings for clear, organized --help output
 	rootCmd.AddGroup(&cobra.Group{ID: "offline", Title: "Offline & Transformation Commands:"})
@@ -120,8 +125,8 @@ func initConfig(v *viper.Viper, cmd *cobra.Command) error {
 	v.AutomaticEnv()
 
 	// Register known keys so AutomaticEnv is picked up during lookup
-	v.SetDefault("api-key", "")
-	v.SetDefault("base-url", "")
+	v.SetDefault("apikey", "")
+	v.SetDefault("url", "")
 	v.SetDefault("output", "text")
 	v.SetDefault("timeout", 10*time.Second)
 

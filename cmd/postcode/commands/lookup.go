@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -57,7 +57,7 @@ will gracefully enrich the response using local reference data.`,
 			}
 
 			if level < 1 || level > 3 {
-				level = 1
+				return fmt.Errorf("invalid lookup level %d: choose 1 (validity), 2 (address), or 3 (building use)", level)
 			}
 
 			res := LookupResult{
@@ -125,39 +125,50 @@ will gracefully enrich the response using local reference data.`,
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
 				for i, r := range res.Results {
 					if i > 0 {
-						fmt.Fprintln(w, "------------------------------------------------------------")
+						_, _ = fmt.Fprintln(w, "------------------------------------------------------------")
 					}
 					status := "VALID"
 					if !r.Valid {
 						status = "INVALID"
 					}
-					fmt.Fprintf(w, "Postcode:      %s [%s] (Source: %s, Level: %d)\n", r.Postcode, status, r.Source, r.Level)
+					displayCode := r.Postcode
+					if displayCode == "" {
+						displayCode = r.Input
+					}
+					if r.Source != "" {
+						_, _ = fmt.Fprintf(w, "Postcode:      %s [%s] (Source: %s, Level: %d)\n", displayCode, status, r.Source, r.Level)
+					} else {
+						_, _ = fmt.Fprintf(w, "Postcode:      %s [%s]\n", displayCode, status)
+					}
+					if r.Error != "" {
+						_, _ = fmt.Fprintf(w, "Error:         %s\n", r.Error)
+					}
 					if r.AdministrativeAddress != nil {
 						aa := r.AdministrativeAddress
-						fmt.Fprintf(w, "State:         %s (%s)\n", aa.StateName, aa.State)
-						fmt.Fprintf(w, "LGA:           %s (%s)\n", aa.LGAName, aa.LGA)
+						_, _ = fmt.Fprintf(w, "State:         %s (%s)\n", aa.StateName, aa.State)
+						_, _ = fmt.Fprintf(w, "LGA:           %s (%s)\n", aa.LGAName, aa.LGA)
 						if aa.DistrictName != "" {
-							fmt.Fprintf(w, "District:      %s (%s)\n", aa.DistrictName, aa.District)
+							_, _ = fmt.Fprintf(w, "District:      %s (%s)\n", aa.DistrictName, aa.District)
 						} else if aa.District != "" {
-							fmt.Fprintf(w, "District:      %s\n", aa.District)
+							_, _ = fmt.Fprintf(w, "District:      %s\n", aa.District)
 						}
 						if aa.AreaName != "" {
-							fmt.Fprintf(w, "Area:          %s (%s)\n", aa.AreaName, aa.Area)
+							_, _ = fmt.Fprintf(w, "Area:          %s (%s)\n", aa.AreaName, aa.Area)
 						} else if aa.Area != "" {
-							fmt.Fprintf(w, "Area:          %s\n", aa.Area)
+							_, _ = fmt.Fprintf(w, "Area:          %s\n", aa.Area)
 						}
 						if aa.Zone != "" {
-							fmt.Fprintf(w, "Zone:          %s\n", aa.Zone)
+							_, _ = fmt.Fprintf(w, "Zone:          %s\n", aa.Zone)
 						}
 					}
 					if r.RecentHouseAddress != nil && r.RecentHouseAddress.Address != "" {
-						fmt.Fprintf(w, "Address:       %s\n", r.RecentHouseAddress.Address)
+						_, _ = fmt.Fprintf(w, "Address:       %s\n", r.RecentHouseAddress.Address)
 					}
 					if r.BuildingUseStatus != "" {
-						fmt.Fprintf(w, "Building Use:  %s\n", r.BuildingUseStatus)
+						_, _ = fmt.Fprintf(w, "Building Use:  %s\n", r.BuildingUseStatus)
 					}
 					if r.PointGeometry != nil && len(r.PointGeometry.Coordinates) >= 2 {
-						fmt.Fprintf(w, "Coordinates:   Lat %.6f, Lng %.6f\n", r.PointGeometry.Coordinates[1], r.PointGeometry.Coordinates[0])
+						_, _ = fmt.Fprintf(w, "Coordinates:   Lat %.6f, Lng %.6f\n", r.PointGeometry.Coordinates[1], r.PointGeometry.Coordinates[0])
 					}
 				}
 				return nil

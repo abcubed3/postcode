@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -137,7 +137,7 @@ Use --open to automatically launch the generated URL in your default system brow
 
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
 				for _, r := range res.Results {
-					fmt.Fprintf(w, "%-16s -> %s\n", r.Postcode, r.URL)
+					_, _ = fmt.Fprintf(w, "%-16s -> %s\n", r.Postcode, r.URL)
 				}
 				return nil
 			})
@@ -145,9 +145,12 @@ Use --open to automatically launch the generated URL in your default system brow
 	}
 
 	cmd.Flags().StringVarP(&provider, "provider", "p", "google", "map provider: google, apple, or osm")
+	_ = cmd.RegisterFlagCompletionFunc("provider", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"google", "apple", "osm"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	cmd.Flags().BoolVarP(&directions, "directions", "d", false, "generate turn-by-turn navigation / directions URL")
 	cmd.Flags().BoolVar(&openBrowser, "open", false, "open generated URL in the default web browser")
-	cmd.Flags().BoolVar(&online, "online", false, "enrich location using remote NIPOST gateway before mapping")
+	cmd.Flags().BoolVar(&online, "online", false, "enrich location using remote NIPOST api before mapping")
 
 	return cmd
 }

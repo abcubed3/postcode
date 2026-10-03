@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -46,9 +46,9 @@ Operates offline with zero allocations by default, or calls the NIPOST gateway w
 					return fmt.Errorf("online assembly failed: %w", err)
 				}
 				return PrintOutput(cmd, v, resp, func(w io.Writer) error {
-					fmt.Fprintf(w, "Postcode: %s\n", resp.Postcode)
-					fmt.Fprintf(w, "Display:  %s\n", resp.Display)
-					fmt.Fprintf(w, "Compact:  %s\n", resp.Compact)
+					_, _ = fmt.Fprintf(w, "Postcode: %s\n", resp.Postcode)
+					_, _ = fmt.Fprintf(w, "Display:  %s\n", resp.Display)
+					_, _ = fmt.Fprintf(w, "Compact:  %s\n", resp.Compact)
 					return nil
 				})
 			}
@@ -67,9 +67,9 @@ Operates offline with zero allocations by default, or calls the NIPOST gateway w
 			}
 
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
-				fmt.Fprintf(w, "Postcode: %s\n", res.Postcode)
-				fmt.Fprintf(w, "Display:  %s\n", res.Display)
-				fmt.Fprintf(w, "Compact:  %s\n", res.Compact)
+				_, _ = fmt.Fprintf(w, "Postcode: %s\n", res.Postcode)
+				_, _ = fmt.Fprintf(w, "Display:  %s\n", res.Display)
+				_, _ = fmt.Fprintf(w, "Compact:  %s\n", res.Compact)
 				return nil
 			})
 		},

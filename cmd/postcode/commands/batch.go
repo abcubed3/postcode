@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"encoding/csv"
@@ -31,23 +31,24 @@ and migrating legacy databases.`,
 		Example: `  postcode batch --input customers.csv --output enriched.csv --column postcode
   cat orders.csv | postcode batch --output - --column shipping_postcode`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var r io.Reader = cmd.InOrStdin()
+			r := cmd.InOrStdin()
 			if inputFile != "" && inputFile != "-" {
 				f, err := os.Open(inputFile)
 				if err != nil {
 					return fmt.Errorf("opening input file: %w", err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				r = f
 			}
 
-			var w io.Writer = cmd.OutOrStdout()
+			w := cmd.OutOrStdout()
+			var outCloser io.Closer
 			if outputFile != "" && outputFile != "-" {
 				f, err := os.Create(outputFile)
 				if err != nil {
 					return fmt.Errorf("creating output file: %w", err)
 				}
-				defer f.Close()
+				outCloser = f
 				w = f
 			}
 
@@ -138,14 +139,27 @@ and migrating legacy databases.`,
 				}
 			}
 
+			writer.Flush()
+			if err := writer.Error(); err != nil {
+				if outCloser != nil {
+					_ = outCloser.Close()
+				}
+				return fmt.Errorf("flushing CSV output: %w", err)
+			}
+			if outCloser != nil {
+				if err := outCloser.Close(); err != nil {
+					return fmt.Errorf("closing output file: %w", err)
+				}
+			}
+
 			elapsed := time.Since(start)
 			throughput := float64(total) / elapsed.Seconds()
 
 			// Report summary to stderr so stdout remains a clean CSV stream
 			errW := cmd.ErrOrStderr()
-			fmt.Fprintf(errW, "\nBatch Process Complete: %d rows processed in %v (%.1f rows/sec)\n", total, elapsed.Round(time.Millisecond), throughput)
-			fmt.Fprintf(errW, "  ✓ Valid postcodes:   %d (%.1f%%)\n", validCount, float64(validCount)/float64(max(total, 1))*100.0)
-			fmt.Fprintf(errW, "  ✗ Invalid postcodes: %d (%.1f%%)\n", invalidCount, float64(invalidCount)/float64(max(total, 1))*100.0)
+			_, _ = fmt.Fprintf(errW, "\nBatch Process Complete: %d rows processed in %v (%.1f rows/sec)\n", total, elapsed.Round(time.Millisecond), throughput)
+			_, _ = fmt.Fprintf(errW, "  ✓ Valid postcodes:   %d (%.1f%%)\n", validCount, float64(validCount)/float64(max(total, 1))*100.0)
+			_, _ = fmt.Fprintf(errW, "  ✗ Invalid postcodes: %d (%.1f%%)\n", invalidCount, float64(invalidCount)/float64(max(total, 1))*100.0)
 
 			return nil
 		},

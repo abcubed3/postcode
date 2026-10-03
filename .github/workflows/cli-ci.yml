@@ -1,0 +1,239 @@
+name: NG Postcode CLI CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+    paths:
+      - 'cmd/postcode/**'
+      - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/workflows/cli-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'cmd/postcode/**'
+      - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/workflows/cli-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-lint:
+    name: Test & Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.work'
+          cache: true
+
+      - name: Display Go environment
+        run: |
+          go version
+          go env
+
+      - name: Run Go Vet
+        run: go vet ./cmd/postcode/...
+
+      - name: Run CLI Tests with Race Detector & Coverage
+        run: |
+          go test -race -v -coverprofile=coverage.out -covermode=atomic ./cmd/postcode/...
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-coverage-report
+          path: coverage.out
+          retention-days: 7
+
+  smoke-test:
+    name: Smoke Test CLI Execution
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.work'
+          cache: true
+
+      - name: Build local binary
+        working-directory: cmd/postcode
+        run: |
+          go build -trimpath -ldflags="-s -w -X 'github.com/abcubed3/postcode/cmd/postcode/commands.Version=ci-smoke' -X 'github.com/abcubed3/postcode/cmd/postcode/commands.GitCommit=${{ github.sha }}' -X 'github.com/abcubed3/postcode/cmd/postcode/commands.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -o postcode .
+
+      - name: Run smoke test commands
+        working-directory: cmd/postcode
+        run: |
+          echo "=== 1. Version Check ==="
+          ./postcode --version
+          ./postcode version
+
+          echo "=== 2. Root Help ==="
+          ./postcode --help
+
+          echo "=== 3. Offline Validation ==="
+          ./postcode validate EK-01-A03-FK-01 "LA 11 W06 TC 10"
+
+          echo "=== 4. Parse & JSON Serialization ==="
+          ./postcode parse "FC 03 B06 AG 12" -o json
+
+          echo "=== 5. Format Normalization ==="
+          ./postcode format "ek 01 a03 fk 01" --style canonical
+
+          echo "=== 6. Segment Disassembly ==="
+          ./postcode disassemble EK-01-A03-FK-01
+
+          echo "=== 7. Segment Assembly ==="
+          ./postcode assemble --state EK --lga 01 --district A03 --area FK --unit 01
+
+          echo "=== 8. Coordinate Extraction ==="
+          ./postcode coords EK-01-A03-FK-01
+
+          echo "=== 9. Mapping URLs ==="
+          ./postcode map EK-01-A03-FK-01 --directions
+
+          echo "=== All smoke test steps passed successfully ==="
+
+  build-cross-platform:
+    name: Cross-Compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            binary_name: postcode-linux-amd64
+          - goos: linux
+            goarch: arm64
+            binary_name: postcode-linux-arm64
+          - goos: darwin
+            goarch: amd64
+            binary_name: postcode-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            binary_name: postcode-darwin-arm64
+          - goos: windows
+            goarch: amd64
+            binary_name: postcode-windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            binary_name: postcode-windows-arm64.exe
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.work'
+          cache: true
+
+      - name: Determine Version String
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "val=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "val=dev-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compile Binary
+        working-directory: cmd/postcode
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${{ steps.version.outputs.val }}"
+          COMMIT="${{ github.sha }}"
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          LDFLAGS="-s -w \
+            -X 'github.com/abcubed3/postcode/cmd/postcode/commands.Version=${VERSION}' \
+            -X 'github.com/abcubed3/postcode/cmd/postcode/commands.GitCommit=${COMMIT}' \
+            -X 'github.com/abcubed3/postcode/cmd/postcode/commands.BuildDate=${BUILD_DATE}'"
+
+          go build -trimpath -ldflags="${LDFLAGS}" -o "${{ matrix.binary_name }}" .
+
+      - name: Generate Checksum
+        working-directory: cmd/postcode
+        run: |
+          sha256sum "${{ matrix.binary_name }}" > "${{ matrix.binary_name }}.sha256"
+          cat "${{ matrix.binary_name }}.sha256"
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.binary_name }}
+          path: |
+            cmd/postcode/${{ matrix.binary_name }}
+            cmd/postcode/${{ matrix.binary_name }}.sha256
+          retention-days: 14
+
+  release:
+    name: Publish Release Assets
+    needs: [build-cross-platform, smoke-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Package Archives & Consolidated Checksums
+        working-directory: release-assets
+        run: |
+          mkdir -p dist
+          # Compress archives
+          for bin in postcode-linux-* postcode-darwin-*; do
+            if [[ -f "$bin" && "$bin" != *.sha256 ]]; then
+              tar -czvf "dist/${bin}.tar.gz" "$bin"
+            fi
+          done
+          for bin in postcode-windows-*.exe; do
+            if [[ -f "$bin" ]]; then
+              zip "dist/${bin%.exe}.zip" "$bin"
+            fi
+          done
+          # Generate combined checksum file
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release-assets/dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

@@ -1,10 +1,12 @@
-package cmd
+package commands
 
 import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -87,38 +89,62 @@ func renderSimpleYAML(w io.Writer, data any) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	writeYAMLValue(w, raw, 0)
-	return nil
+	return writeYAMLValue(w, raw, 0)
 }
 
-func writeYAMLValue(w io.Writer, v any, indent int) {
+func writeYAMLValue(w io.Writer, v any, indent int) error {
 	indentStr := strings.Repeat("  ", indent)
 	switch val := v.(type) {
 	case map[string]any:
 		if indent > 0 {
-			fmt.Fprintln(w)
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
 		}
-		for k, item := range val {
-			fmt.Fprintf(w, "%s%s: ", indentStr, k)
-			writeYAMLValue(w, item, indent+1)
+		for _, k := range slices.Sorted(maps.Keys(val)) {
+			if _, err := fmt.Fprintf(w, "%s%s: ", indentStr, k); err != nil {
+				return err
+			}
+			if err := writeYAMLValue(w, val[k], indent+1); err != nil {
+				return err
+			}
 		}
 	case []any:
 		if indent > 0 {
-			fmt.Fprintln(w)
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
 		}
 		for _, item := range val {
-			fmt.Fprintf(w, "%s- ", indentStr)
-			writeYAMLValue(w, item, indent+1)
+			if _, err := fmt.Fprintf(w, "%s- ", indentStr); err != nil {
+				return err
+			}
+			if err := writeYAMLValue(w, item, indent+1); err != nil {
+				return err
+			}
 		}
 	case string:
-		if strings.ContainsAny(val, ":#\n\t") {
-			fmt.Fprintf(w, "%q\n", val)
+		if val == "" {
+			if _, err := fmt.Fprintln(w, `""`); err != nil {
+				return err
+			}
+		} else if strings.ContainsAny(val, ":#\n\t") || strings.HasPrefix(val, " ") || strings.HasSuffix(val, " ") {
+			if _, err := fmt.Fprintf(w, "%q\n", val); err != nil {
+				return err
+			}
 		} else {
-			fmt.Fprintf(w, "%s\n", val)
+			if _, err := fmt.Fprintf(w, "%s\n", val); err != nil {
+				return err
+			}
 		}
 	case nil:
-		fmt.Fprintln(w, "null")
+		if _, err := fmt.Fprintln(w, "null"); err != nil {
+			return err
+		}
 	default:
-		fmt.Fprintf(w, "%v\n", val)
+		if _, err := fmt.Fprintf(w, "%v\n", val); err != nil {
+			return err
+		}
 	}
+	return nil
 }

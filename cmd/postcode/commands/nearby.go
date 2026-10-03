@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -79,10 +79,10 @@ radius (default 300 meters) of a given geographic coordinate.`,
 			}
 
 			return PrintOutput(cmd, v, out, func(w io.Writer) error {
-				fmt.Fprintf(w, "Nearby units within %.0fm of (%.6f, %.6f) — %d results:\n", radius, lat, lng, len(resp.Results))
-				fmt.Fprintln(w, "--------------------------------------------------------------------------------")
+				_, _ = fmt.Fprintf(w, "Nearby units within %.0fm of (%.6f, %.6f) — %d results:\n", radius, lat, lng, len(resp.Results))
+				_, _ = fmt.Fprintln(w, "--------------------------------------------------------------------------------")
 				for _, u := range resp.Results {
-					fmt.Fprintf(w, "• %-16s | %5.1fm away [%-6s] | %s, %s | %s\n",
+					_, _ = fmt.Fprintf(w, "• %-16s | %5.1fm away [%-6s] | %s, %s | %s\n",
 						u.Postcode, u.DistanceM, u.Confidence, u.LGAName, u.StateName, u.Address)
 				}
 				return nil

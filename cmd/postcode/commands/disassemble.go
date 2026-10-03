@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -77,8 +77,9 @@ and administrative aggregation.`,
 
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
 				for _, r := range res.Results {
-					fmt.Fprintf(w, "%-16s -> State: %-2s | LGA: %-2s | District: %-3s | Area: %-2s | Unit: %-2s\n",
-						r.Postcode, r.State, r.LGA, r.District, r.Area, r.Unit)
+					if _, err := fmt.Fprintf(w, "%-16s -> State: %-2s | LGA: %-2s | District: %-3s | Area: %-2s | Unit: %-2s\n", r.Postcode, r.State, r.LGA, r.District, r.Area, r.Unit); err != nil {
+						return err
+					}
 				}
 				return nil
 			})

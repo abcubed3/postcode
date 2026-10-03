@@ -1,11 +1,11 @@
-package cmd_test
+package commands_test
 
 import (
 	"bytes"
 	"strings"
 	"testing"
 
-	"github.com/abcubed3/postcode/cmd/postcode/cmd"
+	cmd "github.com/abcubed3/postcode/cmd/postcode/commands"
 )
 
 func executeCmd(args []string, in string) (stdout string, stderr string, err error) {
@@ -321,5 +321,54 @@ func TestCLI_Version(t *testing.T) {
 	}
 	if !strings.Contains(out, "postcode version") {
 		t.Errorf("expected version output: %s", out)
+	}
+}
+
+func TestCLI_RootVersionFlag(t *testing.T) {
+	out, _, err := executeCmd([]string{"--version"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "postcode version") {
+		t.Errorf("expected version flag output, got: %s", out)
+	}
+}
+
+func TestCLI_LookupValidation(t *testing.T) {
+	t.Run("invalid level rejected", func(t *testing.T) {
+		_, _, err := executeCmd([]string{"lookup", "--level", "99", "EK-01-A03-FK-01"}, "")
+		if err == nil {
+			t.Fatal("expected error for invalid level 99, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid lookup level 99") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("offline fallback error display on invalid code", func(t *testing.T) {
+		out, _, err := executeCmd([]string{"lookup", "INVALID_CODE_99"}, "")
+		if err != nil {
+			t.Fatalf("unexpected execute error: %v", err)
+		}
+		if !strings.Contains(out, "INVALID_CODE_99 [INVALID]") {
+			t.Errorf("expected INVALID status for input code: %s", out)
+		}
+		if !strings.Contains(out, "Error:") {
+			t.Errorf("expected Error line in output: %s", out)
+		}
+	})
+}
+
+func TestCLI_YAMLDeterminism(t *testing.T) {
+	out1, _, err := executeCmd([]string{"parse", "EK-01-A03-FK-01", "-o", "yaml"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out2, _, err := executeCmd([]string{"parse", "EK-01-A03-FK-01", "-o", "yaml"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out1 != out2 {
+		t.Errorf("YAML output is not deterministic across multiple runs:\nRun1:\n%s\nRun2:\n%s", out1, out2)
 	}
 }

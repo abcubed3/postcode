@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -114,11 +114,14 @@ With --online, it enriches coordinates via the NIPOST gateway.`,
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
 				for _, r := range res.Results {
 					if r.Address != "" {
-						fmt.Fprintf(w, "%-16s -> Lat: %10.6f, Lng: %10.6f [%s] (%s - %s)\n",
-							r.Postcode, r.Latitude, r.Longitude, r.Precision, r.Address, r.StateName)
+						if _, err := fmt.Fprintf(w, "%-16s -> Lat: %10.6f, Lng: %10.6f [%s] (%s - %s)\n", r.Postcode, r.Latitude, r.Longitude, r.Precision, r.Address, r.StateName); err != nil {
+							return err
+						}
 					} else {
-						fmt.Fprintf(w, "%-16s -> Lat: %10.6f, Lng: %10.6f [%s] (%s, %s)\n",
-							r.Postcode, r.Latitude, r.Longitude, r.Precision, r.LGAName, r.StateName)
+						if _, err := fmt.Fprintf(w, "%-16s -> Lat: %10.6f, Lng: %10.6f [%s] (%s, %s)\n",
+							r.Postcode, r.Latitude, r.Longitude, r.Precision, r.LGAName, r.StateName); err != nil {
+							return err
+						}
 					}
 				}
 				return nil

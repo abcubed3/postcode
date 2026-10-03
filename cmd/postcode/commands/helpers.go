@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"bufio"
@@ -56,11 +56,15 @@ func readInputs(cmd *cobra.Command, args []string) ([]string, error) {
 func buildClient(v *viper.Viper) (*postcode.Client, error) {
 	var opts []postcode.ClientOption
 
-	if apiKey := v.GetString("api-key"); apiKey != "" {
+	if apiKey := v.GetString("apikey"); apiKey != "" {
 		opts = append(opts, postcode.WithAPIKey(apiKey))
 	}
 
-	if baseURL := v.GetString("base-url"); baseURL != "" {
+	baseURL := v.GetString("api")
+	if baseURL == "" {
+		baseURL = v.GetString("url")
+	}
+	if baseURL != "" {
 		opts = append(opts, postcode.WithBaseURL(baseURL))
 	}
 

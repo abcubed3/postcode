@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -105,13 +105,13 @@ Exit code is 0 if all postcodes are valid, or 1 if any invalid code is found.`,
 				err = PrintOutput(cmd, v, res, func(w io.Writer) error {
 					for _, r := range res.Results {
 						if r.Valid {
-							fmt.Fprintf(w, "✓ %-16s -> %-16s (State: %s)\n", r.Input, r.Postcode, r.State)
+							_, _ = fmt.Fprintf(w, "✓ %-16s -> %-16s (State: %s)\n", r.Input, r.Postcode, r.State)
 						} else {
-							fmt.Fprintf(w, "✗ %-16s -> INVALID: %s\n", r.Input, r.Reason)
+							_, _ = fmt.Fprintf(w, "✗ %-16s -> INVALID: %s\n", r.Input, r.Reason)
 						}
 					}
 					if len(res.Results) > 1 {
-						fmt.Fprintf(w, "\nSummary: %d total, %d valid, %d invalid\n", res.Total, res.Valid, res.Invalid)
+						_, _ = fmt.Fprintf(w, "\nSummary: %d total, %d valid, %d invalid\n", res.Total, res.Valid, res.Invalid)
 					}
 					return nil
 				})

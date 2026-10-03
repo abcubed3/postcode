@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -91,7 +91,7 @@ Ideal for shell scripting and sanitizing address pipelines.`,
 
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {
 				for _, r := range res.Results {
-					fmt.Fprintln(w, r.Formatted)
+					_, _ = fmt.Fprintln(w, r.Formatted)
 				}
 				return nil
 			})
@@ -99,6 +99,9 @@ Ideal for shell scripting and sanitizing address pipelines.`,
 	}
 
 	cmd.Flags().StringVarP(&style, "style", "s", "canonical", "target format style: canonical (hyphenated), spaced, or compact")
+	_ = cmd.RegisterFlagCompletionFunc("style", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"canonical", "spaced", "compact"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	return cmd
 }

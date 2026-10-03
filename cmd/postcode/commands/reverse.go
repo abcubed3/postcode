@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -46,24 +46,24 @@ and mobile location capture.`,
 
 			return PrintOutput(cmd, v, resp, func(w io.Writer) error {
 				if !resp.Found {
-					fmt.Fprintf(w, "No active postcode unit found within %.1fm of (%.6f, %.6f).\n", resp.RadiusM, lat, lng)
+					_, _ = fmt.Fprintf(w, "No active postcode unit found within %.1fm of (%.6f, %.6f).\n", resp.RadiusM, lat, lng)
 					if resp.Message != "" {
-						fmt.Fprintf(w, "Note: %s\n", resp.Message)
+						_, _ = fmt.Fprintf(w, "Note: %s\n", resp.Message)
 					}
 					return nil
 				}
 
-				fmt.Fprintf(w, "Snapping (%.6f, %.6f) -> %s\n", lat, lng, resp.Unit.Postcode)
-				fmt.Fprintln(w, "------------------------------------------------------------")
-				fmt.Fprintf(w, "Postcode:      %s\n", resp.Unit.Postcode)
-				fmt.Fprintf(w, "Distance:      %.1f meters\n", resp.Unit.DistanceM)
-				fmt.Fprintf(w, "Confidence:    %s\n", resp.Unit.Confidence)
-				fmt.Fprintf(w, "State:         %s\n", resp.State)
-				fmt.Fprintf(w, "LGA:           %s\n", resp.Unit.LGAName)
-				fmt.Fprintf(w, "District:      %s\n", resp.District)
-				fmt.Fprintf(w, "Area:          %s\n", resp.Area)
+				_, _ = fmt.Fprintf(w, "Snapping (%.6f, %.6f) -> %s\n", lat, lng, resp.Unit.Postcode)
+				_, _ = fmt.Fprintln(w, "------------------------------------------------------------")
+				_, _ = fmt.Fprintf(w, "Postcode:      %s\n", resp.Unit.Postcode)
+				_, _ = fmt.Fprintf(w, "Distance:      %.1f meters\n", resp.Unit.DistanceM)
+				_, _ = fmt.Fprintf(w, "Confidence:    %s\n", resp.Unit.Confidence)
+				_, _ = fmt.Fprintf(w, "State:         %s\n", resp.State)
+				_, _ = fmt.Fprintf(w, "LGA:           %s\n", resp.Unit.LGAName)
+				_, _ = fmt.Fprintf(w, "District:      %s\n", resp.District)
+				_, _ = fmt.Fprintf(w, "Area:          %s\n", resp.Area)
 				if resp.Unit.Address != "" {
-					fmt.Fprintf(w, "Address:       %s\n", resp.Unit.Address)
+					_, _ = fmt.Fprintf(w, "Address:       %s\n", resp.Unit.Address)
 				}
 				return nil
 			})
