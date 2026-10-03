@@ -17,3 +17,7 @@ cover.html
 ._*
 .Spotlight-V100
 .Trashes
+
+# Key
+.env.example
+.env

@@ -101,6 +101,27 @@ func main() {
 | `client.Assemble(ctx, segs)` | `POST /v1/assembly/assemble` | Assembles 5 segments into canonical format. |
 | `client.Disassemble(ctx, code)` | `GET /v1/assembly/disassemble` | Decomposes code into its 5 administrative segments. |
 
+## Command-Line Interface (`postcode`)
+
+The repository includes a production-grade, Cobra- and Viper-powered CLI binary for terminal and pipeline workflows:
+
+```bash
+# Build and install the CLI
+go install ./cmd/postcode
+```
+
+### Key CLI Capabilities
+
+- **Offline Validation**: `postcode validate "EK 01 A03 FK 01"` (grammar, format, state codes, exit codes).
+- **Segment Parsing**: `postcode parse "LA 11 W06 TC 10" -o json` (extracts State, LGA, District, Area, Unit, Zone).
+- **Format Normalization**: `cat dirty.txt | postcode format --style canonical` (Unix pipe friendly).
+- **Geocoding & Maps**: `postcode map EK-01-A03-FK-01` (generates Google Maps, Apple Maps, OSM URLs).
+- **Batch CSV Processing**: `postcode batch --input orders.csv --output enriched.csv --column postcode` (processes >350k rows/sec offline).
+- **Gateway Operations**: `postcode lookup`, `postcode autocomplete`, `postcode nearby`, `postcode reverse`, and `postcode status`.
+- **Embedded Simulator**: `postcode serve --port 8080` (runs local mock NIPOST gateway directly).
+
+See `postcode --help` or individual command help (`postcode <cmd> --help`) for full flag details.
+
 ## Live Server Simulator
 
 For local development and automated CI testing without incurring API fees or requiring live network access, the SDK includes an in-memory mock server pre-loaded with all official test postcodes from [docs.postcode.gov.ng](https://docs.postcode.gov.ng/concepts/lookup-levels#test-postcodes):
