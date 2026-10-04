@@ -4,7 +4,6 @@ on:
   push:
     branches: [ main ]
     tags:
-      - 'cmd/postcode/v*'
       - 'v*'
     paths:
       - 'cmd/postcode/**'
