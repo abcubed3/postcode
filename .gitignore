@@ -11,7 +11,6 @@ bin/
 *.test
 *.out
 cover.html
-wasm/.test.js
 
 # OS metadata
 .DS_Store
