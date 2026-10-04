@@ -3,7 +3,9 @@ name: NG Postcode CLI CI
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
+    tags:
+      - 'cmd/postcode/v*'
+      - 'v*'
     paths:
       - 'cmd/postcode/**'
       - '*.go'
@@ -80,7 +82,7 @@ jobs:
       - name: Build local binary
         working-directory: cmd/postcode
         run: |
-          go build -trimpath -ldflags="-s -w -X 'github.com/abcubed3/postcode/cmd/postcode/commands.Version=ci-smoke' -X 'github.com/abcubed3/postcode/cmd/postcode/commands.GitCommit=${{ github.sha }}' -X 'github.com/abcubed3/postcode/cmd/postcode/commands.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -o postcode .
+          go build -trimpath -ldflags="-s -w -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.Version=ci-smoke' -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.GitCommit=${{ github.sha }}' -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -o postcode .
 
       - name: Run smoke test commands
         working-directory: cmd/postcode
@@ -155,9 +157,13 @@ jobs:
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "val=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            REF_TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${REF_TAG##*/}"
+            echo "val=${VERSION}" >> $GITHUB_OUTPUT
+            echo "tag=${REF_TAG}" >> $GITHUB_OUTPUT
           else
             echo "val=dev-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            echo "tag=dev-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
 
       - name: Compile Binary
@@ -172,9 +178,9 @@ jobs:
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           LDFLAGS="-s -w \
-            -X 'github.com/abcubed3/postcode/cmd/postcode/commands.Version=${VERSION}' \
-            -X 'github.com/abcubed3/postcode/cmd/postcode/commands.GitCommit=${COMMIT}' \
-            -X 'github.com/abcubed3/postcode/cmd/postcode/commands.BuildDate=${BUILD_DATE}'"
+            -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.Version=${VERSION}' \
+            -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.GitCommit=${COMMIT}' \
+            -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.BuildDate=${BUILD_DATE}'"
 
           go build -trimpath -ldflags="${LDFLAGS}" -o "${{ matrix.binary_name }}" .
 
@@ -196,7 +202,7 @@ jobs:
   release:
     name: Publish Release Assets
     needs: [build-cross-platform, smoke-test]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/cmd/postcode/v') || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -230,9 +236,18 @@ jobs:
           sha256sum * > checksums.txt
           cat checksums.txt
 
+      - name: Determine Release Title
+        id: rel
+        run: |
+          REF_TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${REF_TAG##*/}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ github.ref_name }}
+          name: "Postcode CLI ${{ steps.rel.outputs.version }}"
           files: release-assets/dist/*
           generate_release_notes: true
           draft: false
