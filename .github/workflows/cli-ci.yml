@@ -5,9 +5,12 @@ on:
     branches: [ main ]
     tags:
       - 'v*'
+      - 'cmd/postcode/v*'
+      - 'wasm/v*'
     paths:
       - 'cmd/postcode/**'
       - '*.go'
+      - 'wasm/**'
       - 'go.mod'
       - 'go.sum'
       - 'go.work'
@@ -18,6 +21,7 @@ on:
     paths:
       - 'cmd/postcode/**'
       - '*.go'
+      - 'wasm/**'
       - 'go.mod'
       - 'go.sum'
       - 'go.work'
@@ -50,12 +54,40 @@ jobs:
           go version
           go env
 
-      - name: Run Go Vet
-        run: go vet ./cmd/postcode/...
-
-      - name: Run CLI Tests with Race Detector & Coverage
+      - name: Run Go Vet across all modules
         run: |
-          go test -race -v -coverprofile=coverage.out -covermode=atomic ./cmd/postcode/...
+          go vet ./...
+          go vet ./cmd/postcode/...
+          go vet ./otelpostcode/...
+
+      - name: Run All Tests with Race Detector & Coverage
+        run: |
+          go test -race -v -coverprofile=coverage.out -covermode=atomic ./... ./cmd/postcode/... ./otelpostcode/...
+
+      - name: Compile WebAssembly Target
+        run: |
+          GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Smoke Test WebAssembly in Node.js
+        run: |
+          node -e "
+            const { initPostcode } = require('./wasm/index.js');
+            initPostcode().then(p => {
+              const res = p.validate('EK 01 A03 FK 01');
+              if (!res.valid) throw new Error('WASM validation failed');
+              const diag = p.diagnose('ZZ 00 A03 FK 00');
+              if (diag.valid) throw new Error('Expected invalid');
+              console.log('WASM Smoke Test Passed: format_score =', diag.format_score);
+            });
+          "
+
+      - name: Run WebAssembly Test Script
+        run: node wasm/test.js
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v7
@@ -113,6 +145,19 @@ jobs:
 
           echo "=== 9. Mapping URLs ==="
           ./postcode map EK-01-A03-FK-01 --directions
+
+          echo "=== 10. AI Diagnostics ==="
+          ./postcode diagnose "EK-01-A03-FK-01"
+          ./postcode diagnose "ZZ 00 A03 FK 00" || true
+
+          echo "=== 11. AI Synthetic Evaluation Harness ==="
+          ./postcode eval --samples 25 --noise 0.2
+          ./postcode eval --samples 10 --export /tmp/eval_dataset.json -o json
+          test -f /tmp/eval_dataset.json
+
+          echo "=== 12. MCP Server Protocol Handshake ==="
+          printf '{"jsonrpc":"2.0","id":1,"method":"server/discover"}\n' | ./postcode mcp > /tmp/mcp_discover.json
+          grep -q "supportedVersions" /tmp/mcp_discover.json
 
           echo "=== All smoke test steps passed successfully ==="
 
@@ -215,6 +260,13 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Build WebAssembly Release Distribution
+        run: |
+          mkdir -p release-assets/wasm release-assets/dist
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o release-assets/wasm/postcode.wasm ./wasm
+          cp wasm/wasm_exec.js wasm/index.js release-assets/wasm/
+          tar -czvf "release-assets/dist/postcode-wasm.tar.gz" -C release-assets/wasm postcode.wasm wasm_exec.js index.js
+
       - name: Package Archives & Consolidated Checksums
         working-directory: release-assets
         run: |
@@ -251,3 +303,59 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+
+  publish-npm:
+    name: Publish to npm (@abcubed3/postcode-wasm)
+    needs: [test-and-lint, smoke-test]
+    if: startsWith(github.ref, 'refs/tags/wasm/v') || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.work'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Extract Release Version from Tag
+        id: version
+        run: |
+          REF_TAG="${GITHUB_REF#refs/tags/}"
+          CLEAN="${REF_TAG#wasm/}"
+          VERSION="${CLEAN#v}"
+          echo "val=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Publishing version: ${VERSION}"
+
+      - name: Build WebAssembly Binary
+        working-directory: wasm
+        run: |
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o postcode.wasm .
+          cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm_exec.js
+
+      - name: Synchronize package.json Version
+        working-directory: wasm
+        run: |
+          npm version "${{ steps.version.outputs.val }}" --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm Registry
+        working-directory: wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            npm publish --access public --provenance
+          else
+            echo "::warning::NPM_TOKEN secret is not configured in repository secrets. Skipping npm publish."
+          fi
+

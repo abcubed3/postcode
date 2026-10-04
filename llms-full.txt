@@ -255,3 +255,52 @@ go install github.com/abcubed3/postcode/cmd/postcode@latest
 | `postcode batch` | Ops | Batch process CSV (>350k rows/s) | `postcode batch -i in.csv -o out.csv` |
 | `postcode serve` | Ops | Start in-memory mock NIPOST api | `postcode serve --port 2340` |
 | `postcode mcp` | Ops | Start Model Context Protocol server | `postcode mcp` |
+| `postcode eval` | Ops | Synthetic address eval harness & benchmark | `postcode eval --samples 100 --noise 0.3` |
+
+---
+
+## 7. Agent Guardrails & Caching
+
+### Budget & Quota Ceilings (`postcode.AgentGuardConfig`)
+Autonomous agents can be bounded to prevent runaway loops and unexpected credit consumption:
+```go
+client, err := postcode.NewClient(
+    postcode.WithAgentGuard(postcode.AgentGuardConfig{
+        MaxCommercialCallsPerRun: 10,   // Limits paid (L2/L3) requests
+        MaxTotalCallsPerRun:      50,   // Total calls ceiling before returning ErrAgentBudgetExceeded
+        AutoDowngradeToLevel1:    true, // Downgrades to free L1 on budget exhaustion
+        AutoFallbackToOffline:    true, // Returns offline geocoding if gateway errors
+    }),
+    postcode.WithDefaultCache(),       // In-memory TTL cache (1000 items, 30m TTL)
+)
+```
+
+---
+
+## 8. WebAssembly (WASM) Edge Engine
+
+The SDK can be compiled to WebAssembly for execution in browser and edge worker environments:
+```bash
+GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
+```
+Exposes `globalThis.Postcode`:
+- `Postcode.validate(code)`
+- `Postcode.diagnose(code)`
+- `Postcode.parse(code)`
+- `Postcode.resolveLocation(code)`
+- `Postcode.listStates()`
+
+---
+
+## 9. Synthetic Address Generator & Eval Benchmark
+
+Generate realistic noisy Nigerian addresses and benchmark model extraction accuracy:
+```go
+dataset := postcode.GenerateSyntheticDataset(postcode.GeneratorOptions{
+    Count:     100,
+    NoiseRate: 0.3,
+})
+result := postcode.EvaluateAgent(dataset, postcode.BaselineExtract)
+// result: StateAccuracy, PostcodeAccuracy, ValidRate, AvgFormatScore, DurationMs
+```
+

@@ -104,6 +104,9 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	diagnoseCmd := NewDiagnoseCmd(v)
 	diagnoseCmd.GroupID = "offline"
 
+	evalCmd := NewEvalCmd(v)
+	evalCmd.GroupID = "ops"
+
 	rootCmd.AddCommand(
 		validateCmd,
 		diagnoseCmd,
@@ -121,6 +124,7 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		batchCmd,
 		serveCmd,
 		mcpCmd,
+		evalCmd,
 		versionCmd,
 	)
 

@@ -191,6 +191,45 @@ func main() {
 	}
 
 	fmt.Println("\n==============================================================")
+	fmt.Println("🧠 6. AI Diagnostic Self-Correction & Format Scoring")
+	fmt.Println("==============================================================")
+	diag := postcode.Diagnose("ZZ 00 A03 FK 00")
+	fmt.Printf("Malformed Input:  %s\n", diag.Input)
+	fmt.Printf("Structural Score: %.1f / 100\n", diag.FormatScore)
+	fmt.Printf("Actionable Tip:   %s\n", diag.ActionableTip)
+	for _, d := range diag.Diagnoses {
+		fmt.Printf("  • [%s] %s\n", d.Segment, d.Message)
+	}
+
+	fmt.Println("\n==============================================================")
+	fmt.Println("🛡️  7. Autonomous Agent Guardrails & In-Memory Caching")
+	fmt.Println("==============================================================")
+	agentClient, _ := postcode.NewClient(
+		postcode.WithBaseURL(srv.URL),
+		postcode.WithAPIKey("agent_session_key"),
+		postcode.WithAgentGuard(postcode.AgentGuardConfig{
+			MaxCommercialCallsPerRun: 1,    // Hard commercial ceiling
+			MaxTotalCallsPerRun:      5,
+			AutoDowngradeToLevel1:    true, // Transparently downgrade on quota exhaustion
+			AutoFallbackToOffline:    true,
+		}),
+		postcode.WithDefaultCache(),
+	)
+
+	// Call 1: Consumes 1 commercial call
+	_, _ = agentClient.Lookup(ctx, "LA-11-W06-TC-10", postcode.Level2)
+	// Call 2: Served immediately from cache (0 quota used)
+	_, _ = agentClient.Lookup(ctx, "LA-11-W06-TC-10", postcode.Level2)
+	// Call 3: Exceeds commercial limit -> auto-downgraded to Level 1
+	dRes, _ := agentClient.Lookup(ctx, "EK-01-A03-FK-01", postcode.Level2)
+	fmt.Printf("Call 3 (Post-Budget): Valid=%t, HasAdminAddress=%t\n",
+		dRes.Valid, dRes.AdministrativeAddress != nil)
+
+	metrics := agentClient.AgentMetrics()
+	fmt.Printf("Agent Session Telemetry: Total=%d, Commercial=%d, Downgraded=%d\n",
+		metrics.TotalCalls, metrics.CommercialCalls, metrics.DowngradedCalls)
+
+	fmt.Println("\n==============================================================")
 	fmt.Println(" All tests and simulator scenarios passed successfully!")
 	fmt.Println("==============================================================")
 }

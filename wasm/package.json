@@ -1,0 +1,31 @@
+{
+  "name": "@abcubed3/postcode-wasm",
+  "version": "1.0.0",
+  "description": "Zero-dependency Nigerian Postcode validation, format diagnostics, and geocoding engine compiled to WebAssembly from Go",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "wasm_exec.js",
+    "postcode.wasm",
+    "README.md"
+  ],
+  "keywords": [
+    "nigeria",
+    "postcode",
+    "nipost",
+    "geocoding",
+    "wasm",
+    "webassembly",
+    "address",
+    "validation"
+  ],
+  "author": "abcubed3",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abcubed3/postcode.git",
+    "directory": "wasm"
+  }
+}

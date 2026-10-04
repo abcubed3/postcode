@@ -53,6 +53,7 @@ func TestCLI_RootHelp(t *testing.T) {
 		"batch",
 		"serve",
 		"mcp",
+		"eval",
 		"version",
 	}
 
@@ -423,3 +424,30 @@ func TestCLI_MCP(t *testing.T) {
 		t.Errorf("expected initialize response on stdout, got: %s", out)
 	}
 }
+
+func TestCLI_Eval(t *testing.T) {
+	t.Run("default evaluation", func(t *testing.T) {
+		out, _, err := executeCmd([]string{"eval", "--samples", "20", "--noise", "0.2"}, "")
+		if err != nil {
+			t.Fatalf("eval command failed: %v", err)
+		}
+		if !strings.Contains(out, "Nigerian Address AI Evaluation Scorecard") {
+			t.Errorf("expected scorecard header in output, got: %s", out)
+		}
+		if !strings.Contains(out, "Total Samples:       20") {
+			t.Errorf("expected 20 samples in output, got: %s", out)
+		}
+	})
+
+	t.Run("json output and export", func(t *testing.T) {
+		tmpFile := t.TempDir() + "/test_eval.json"
+		out, _, err := executeCmd([]string{"eval", "--samples", "10", "--export", tmpFile, "-o", "json"}, "")
+		if err != nil {
+			t.Fatalf("eval json failed: %v", err)
+		}
+		if !strings.Contains(out, `"total_samples": 10`) {
+			t.Errorf("expected total_samples: 10 in output, got: %s", out)
+		}
+	})
+}
+

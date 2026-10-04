@@ -88,16 +88,56 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 		return nil, fmt.Errorf("postcode: lookup code cannot be empty")
 	}
 
+	requestedLevel := level
+	if requestedLevel == 0 {
+		requestedLevel = Level1
+	}
+
+	cacheKey := fmt.Sprintf("lookup:%s:%d", code, requestedLevel)
+	if c.cache != nil {
+		if val, ok := c.cache.Get(cacheKey); ok {
+			if cached, ok := val.(*LookupResponse); ok {
+				return cached, nil
+			}
+		}
+	}
+
+	effectiveLevel := requestedLevel
+	if c.agentGuard != nil {
+		var err error
+		effectiveLevel, err = c.agentGuard.checkAndRecord(requestedLevel)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	effectiveCacheKey := fmt.Sprintf("lookup:%s:%d", code, effectiveLevel)
+	if effectiveLevel != requestedLevel && c.cache != nil {
+		if val, ok := c.cache.Get(effectiveCacheKey); ok {
+			if cached, ok := val.(*LookupResponse); ok {
+				return cached, nil
+			}
+		}
+	}
+
 	q := make(url.Values, 2)
 	q.Set("code", code)
-	if level > 0 {
-		q.Set("level", strconv.Itoa(int(level)))
+	if effectiveLevel > 0 {
+		q.Set("level", strconv.Itoa(int(effectiveLevel)))
 	}
 
 	var res LookupResponse
 	endpoint := []string{"v1", "lookup"}
 	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+		if apiErr, ok := err.(*APIError); ok && (apiErr.StatusCode == 402 || apiErr.StatusCode == 403) && effectiveLevel > Level1 && c.agentGuard != nil && c.agentGuard.cfg.AutoDowngradeToLevel1 {
+			c.agentGuard.recordDowngrade()
+			return c.Lookup(ctx, code, Level1)
+		}
 		return nil, err
+	}
+
+	if c.cache != nil {
+		c.cache.Set(effectiveCacheKey, &res, 0)
 	}
 
 	return &res, nil
@@ -119,7 +159,11 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 	// 1. Query gateway at official maximum commercial Level 3 (or fallback to Level 2)
 	res, errLookup := c.Lookup(ctx, p.Formatted(), Level3)
 	if errLookup != nil {
-		res, _ = c.Lookup(ctx, p.Formatted(), Level2)
+		res, errLookup = c.Lookup(ctx, p.Formatted(), Level2)
+	}
+
+	if errLookup != nil && c.agentGuard != nil && c.agentGuard.cfg.AutoFallbackToOffline {
+		c.agentGuard.recordFallback()
 	}
 
 	if res != nil && res.Valid {

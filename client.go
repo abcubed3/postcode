@@ -39,6 +39,8 @@ type Client struct {
 	retryConfig   RetryConfig
 	telemetry     Telemetry
 	rateLimit     atomic.Pointer[RateLimitInfo]
+	cache         Cache
+	agentGuard    *agentGuardState
 }
 
 // NewClient instantiates a production-tuned HTTP client.
@@ -157,6 +159,35 @@ func WithRateLimitRetry(enabled bool, maxDelay time.Duration) ClientOption {
 			c.retryConfig.MaxRateLimitDelay = maxDelay
 		}
 	}
+}
+
+// WithCache configures a custom cache implementation for the client.
+func WithCache(cache Cache) ClientOption {
+	return func(c *Client) {
+		c.cache = cache
+	}
+}
+
+// WithDefaultCache configures a standard in-memory TTL cache (1000 items, 30m TTL).
+func WithDefaultCache() ClientOption {
+	return func(c *Client) {
+		c.cache = NewMemoryCache(1000, 30*time.Minute)
+	}
+}
+
+// WithAgentGuard configures budget and safety ceilings for autonomous agents.
+func WithAgentGuard(cfg AgentGuardConfig) ClientOption {
+	return func(c *Client) {
+		c.agentGuard = newAgentGuardState(cfg)
+	}
+}
+
+// AgentMetrics returns live telemetry metrics for calls executed under agent guardrails.
+func (c *Client) AgentMetrics() AgentGuardMetrics {
+	if c.agentGuard == nil {
+		return AgentGuardMetrics{}
+	}
+	return c.agentGuard.metrics()
 }
 
 // RateLimit returns the most recent rate limit quotas reported by the NIPOST gateway,

@@ -24,6 +24,7 @@ type DiagnosticReport struct {
 	CleanLength   int                `json:"clean_length"`            // Number of alphanumeric characters found
 	Diagnoses     []SegmentDiagnosis `json:"diagnoses,omitempty"`
 	ActionableTip string             `json:"actionable_tip,omitempty"` // Summary recommendation for the caller/agent
+	FormatScore   float64            `json:"format_score"`             // Structural conformance score (0.0 to 100.0)
 }
 
 // ValidationError represents a validation failure enriched with an actionable DiagnosticReport.
@@ -191,6 +192,7 @@ func Diagnose(raw string) DiagnosticReport {
 			report.Valid = true
 			report.Normalized = p.Formatted()
 			report.ActionableTip = "Postcode is fully valid and conforms to NIPOST standard."
+			report.FormatScore = 100.0
 			return report
 		}
 	}
@@ -210,6 +212,19 @@ func Diagnose(raw string) DiagnosticReport {
 	} else {
 		report.ActionableTip = "Check standard NIPOST format: State(2A) LGA(2D) District(3AN) Area(2A) Unit(2D), e.g. 'EK-01-A03-FK-01'."
 	}
+
+	// Calculate format score (0.0 to 100.0) based on severity of issues
+	deduction := float64(len(report.Diagnoses)) * 15.0
+	diff := float64(11 - report.CleanLength)
+	if diff < 0 {
+		diff = -diff
+	}
+	deduction += diff * 8.0
+	score := 100.0 - deduction
+	if score < 0.0 {
+		score = 0.0
+	}
+	report.FormatScore = score
 
 	return report
 }

@@ -349,6 +349,78 @@ Traditional validators return opaque errors that cause agents to hallucinate. `p
 report := postcode.Diagnose("ZZ 00 A03 FK 00")
 // report.Diagnoses -> Segment-by-segment errors with closest valid state suggestions
 // report.ActionableTip -> "Fix State: consider ZA (Zamfara); Fix LGA: 00 invalid (01-99)..."
+// report.FormatScore -> 40.0 / 100.0
+```
+
+### 4. Autonomous Agent Budget & Quota Guardrails
+
+Autonomous agents in reasoning loops can quickly burn API credits or encounter rate limits. Configure safety ceilings and automated fallback behaviors:
+
+```go
+client, err := postcode.NewClient(
+    postcode.WithAPIKey("YOUR_KEY"),
+    postcode.WithAgentGuard(postcode.AgentGuardConfig{
+        MaxCommercialCallsPerRun: 10,   // Ceiling on paid Level 2/3 lookups per session
+        MaxTotalCallsPerRun:      50,   // Absolute ceiling on all calls
+        AutoDowngradeToLevel1:    true, // Downgrade to free Level 1 validation if budget depleted
+        AutoFallbackToOffline:    true, // Fall back to offline geocoding on 429/402 errors
+    }),
+)
+
+metrics := client.AgentMetrics()
+fmt.Printf("Total: %d, Commercial: %d, Downgraded: %d, Fallbacks: %d\n",
+    metrics.TotalCalls, metrics.CommercialCalls, metrics.DowngradedCalls, metrics.OfflineFallbacks)
+```
+
+### 5. Tool Call Caching & Idempotency
+
+Prevent redundant network calls and token spend across agent retry loops:
+
+```go
+// Enable built-in thread-safe memory cache (1000 items, 30m TTL)
+client, err := postcode.NewClient(
+    postcode.WithDefaultCache(),
+)
+```
+
+### 6. WebAssembly (WASM) Edge Engine
+
+Run the entire offline validation, diagnostics, and geocoding engine inside Node.js, Deno, Bun, Cloudflare Workers, or web browsers with zero network latency:
+
+```bash
+# Build WASM binary
+GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
+```
+
+```javascript
+const { initPostcode } = require('./wasm/index.js');
+
+const postcode = await initPostcode();
+const result = postcode.validate("EK 01 A03 FK 01");
+const loc = postcode.resolveLocation("EK 01 A03 FK 01");
+```
+
+### 7. Synthetic Address Generator & Eval Harness (`postcode eval`)
+
+Benchmark AI agents, NER extractors, and LLMs against realistic Nigerian addresses with noisy landmarks, informal local descriptions, and typos:
+
+```bash
+# Benchmark baseline accuracy on 100 synthetic noisy addresses
+postcode eval --samples 100 --noise 0.3
+
+# Export synthetic dataset for Promptfoo, LangSmith, or Braintrust
+postcode eval --samples 500 --export addresses.json
+```
+
+```go
+// Programmatic generation & evaluation
+dataset := postcode.GenerateSyntheticDataset(postcode.GeneratorOptions{
+    Count:     100,
+    NoiseRate: 0.3,
+})
+result := postcode.EvaluateAgent(dataset, myAgentExtractor)
+fmt.Printf("State Accuracy: %.2f%%, Postcode Accuracy: %.2f%%\n",
+    result.StateAccuracy, result.PostcodeAccuracy)
 ```
 
 ## Benchmarks

@@ -37,6 +37,7 @@
   - [13. Local Mock API Simulator (`serve`)](#13-local-mock-API-simulator-serve)
   - [14. AI Diagnostic Inspection & Self-Correction (`diagnose`)](#14-ai-diagnostic-inspection--self-correction-diagnose)
   - [15. Model Context Protocol Server (`mcp`)](#15-model-context-protocol-server-mcp)
+  - [16. Synthetic Address Generator & AI Evaluation Harness (`eval`)](#16-synthetic-address-generator--ai-evaluation-harness-eval)
 - [Production Recipes & Shell Integration](#production-recipes--shell-integration)
   - [Recipe A: Stream Processing with `jq` and `curl`](#recipe-a-stream-processing-with-jq-and-curl)
   - [Recipe B: Fast DB Data Cleaning in ETL Pipelines](#recipe-b-fast-db-data-cleaning-in-etl-pipelines)
@@ -601,6 +602,35 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `autocomplete_postcode`: Segment-aware autocomplete suggestions.
 - `lookup_postcode`: Graded official gateway query (L1 free, L2/L3 commercial).
 - `list_states`: Returns directory of all 36 States + FCT with capitals and centroids.
+
+---
+
+### 16. Synthetic Address Generator & AI Evaluation Harness (`eval`)
+
+Benchmark AI agents, LLM entity extractors, and OCR pipelines on realistic Nigerian address datasets. Generates synthetic noisy addresses containing Nigerian landmarks, colloquial descriptions, informal abbreviations, and state typos:
+
+```bash
+# Generate 100 synthetic addresses with 30% noise and benchmark extraction accuracy
+postcode eval --samples 100 --noise 0.3
+```
+
+```text
+Nigerian Address AI Evaluation Scorecard
+========================================
+Total Samples:       100
+Noise Rate:          30.0%
+State Accuracy:      98.00%
+Postcode Accuracy:   89.00%
+Valid Postcode Rate: 89.00%
+Avg Format Score:    93.50 / 100
+Eval Latency:        2 ms
+```
+
+#### Export Datasets for AI Eval Frameworks
+Export benchmark datasets to JSON for use with LangSmith, Promptfoo, Braintrust, or DeepEval:
+```bash
+postcode eval --samples 500 --noise 0.4 --export benchmarks/nigerian_addresses.json
+```
 
 ---
 
