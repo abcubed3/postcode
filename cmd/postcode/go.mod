@@ -3,7 +3,7 @@ module github.com/abcubed3/postcode/cmd/postcode
 go 1.27.0
 
 require (
-	github.com/abcubed3/postcode v0.0.0
+	github.com/abcubed3/postcode v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 )
@@ -23,5 +23,3 @@ require (
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 )
-
-replace github.com/abcubed3/postcode => ../..

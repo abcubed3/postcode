@@ -15,10 +15,30 @@ A high-performance, zero-allocation Go client library for Nigeria's National Dig
 
 ## Installation
 
-Requires **Go 1.27+**:
+Requires **Go 1.27+**.
+
+### Go Library (SDK)
+
+Add the core library to your Go project:
 
 ```bash
 go get github.com/abcubed3/postcode
+```
+
+### Command-Line Interface (`postcode`)
+
+Install the `postcode` CLI binary directly to your `$GOPATH/bin`:
+
+```bash
+go install github.com/abcubed3/postcode/cmd/postcode@latest
+```
+
+Or download pre-compiled binaries for Linux, macOS, and Windows from [GitHub Releases](https://github.com/abcubed3/postcode/releases/latest).
+
+Verify installation:
+
+```bash
+postcode version
 ```
 
 ## Quickstart
@@ -103,11 +123,11 @@ func main() {
 
 ## Command-Line Interface (`postcode`)
 
-The repository includes a production-grade, Cobra- and Viper-powered CLI binary for terminal and pipeline workflows:
+The repository includes a production-grade CLI binary for terminal and pipeline workflows:
 
 ```bash
-# Build and install the CLI
-go install ./cmd/postcode
+# Install the CLI
+go install github.com/abcubed3/postcode/cmd/postcode@latest
 ```
 
 ### Key CLI Capabilities
@@ -118,29 +138,34 @@ go install ./cmd/postcode
 - **Geocoding & Maps**: `postcode map EK-01-A03-FK-01` (generates Google Maps, Apple Maps, OSM URLs).
 - **Batch CSV Processing**: `postcode batch --input orders.csv --output enriched.csv --column postcode` (processes >350k rows/sec offline).
 - **Gateway Operations**: `postcode lookup`, `postcode autocomplete`, `postcode nearby`, `postcode reverse`, and `postcode status`.
-- **Embedded Simulator**: `postcode serve --port 8080` (runs local mock NIPOST gateway directly).
+- **Embedded Simulator**: `postcode serve --port 2340` (runs local mock NIPOST gateway directly, with optional `--data` flag).
 
-See `postcode --help` or individual command help (`postcode <cmd> --help`) for full flag details.
+> 📖 **Full User Guide**: For complete documentation, command options, and real-world recipes, see the **[CLI User Guide & Reference](cmd/postcode/README.md)**.
 
 ## Live Server Simulator
 
-For local development and automated CI testing without incurring API fees or requiring live network access, the SDK includes an in-memory mock server pre-loaded with all official test postcodes from [docs.postcode.gov.ng](https://docs.postcode.gov.ng/concepts/lookup-levels#test-postcodes):
+For local development and automated CI testing without incurring API fees or requiring live network access, the toolkit includes an in-memory mock server pre-loaded with all official test postcodes from [docs.postcode.gov.ng](https://docs.postcode.gov.ng/concepts/lookup-levels#test-postcodes):
 
 ### 1. Run as a Standalone Server
 
+Start the simulator directly via the CLI:
+
 ```bash
-# Start on localhost:8080 (or specify -port 8080)
-go run ./cmd/simulator
+# Start on localhost:2340 (or specify --port 2340)
+postcode serve --port 2340
+
+# Or run directly from source without installation:
+go run ./cmd/postcode serve --port 2340
 ```
 
 Test with `curl`:
 
 ```bash
 # L1 Public validity lookup (Free, no auth)
-curl "http://localhost:8080/v1/lookup?code=EK-01-A03-FK-01&level=1"
+curl "http://localhost:2340/v1/lookup?code=EK-01-A03-FK-01&level=1"
 
 # L3 Commercial lookup (Requires X-API-Key header)
-curl "http://localhost:8080/v1/lookup?code=EK-01-A03-FK-01&level=3" \
+curl "http://localhost:2340/v1/lookup?code=EK-01-A03-FK-01&level=3" \
   -H "X-API-Key: nipost_live_test"
 ```
 

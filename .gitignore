@@ -21,3 +21,6 @@ cover.html
 # Key
 .env.example
 .env
+
+# Notes
+*.notes.txt

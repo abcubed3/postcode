@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	cmd "github.com/abcubed3/postcode/cmd/postcode/commands"
+	cmd "github.com/abcubed3/postcode/cmd/postcode/internal/commands"
 )
 
 func executeCmd(args []string, in string) (stdout string, stderr string, err error) {

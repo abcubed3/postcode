@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	cmd "github.com/abcubed3/postcode/cmd/postcode/commands"
+	cmd "github.com/abcubed3/postcode/cmd/postcode/internal/commands"
 )
 
 func main() {
