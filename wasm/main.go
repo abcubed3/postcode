@@ -3,11 +3,138 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"sync"
 	"syscall/js"
 
 	"github.com/abcubed3/postcode"
 )
+
+var (
+	clientMu    sync.RWMutex
+	currentKey  string
+	currentBase string
+	client      *postcode.Client
+)
+
+func getOrCreateClient() *postcode.Client {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	if client == nil {
+		var opts []postcode.ClientOption
+		if currentKey != "" {
+			opts = append(opts, postcode.WithAPIKey(currentKey))
+		}
+		if currentBase != "" {
+			opts = append(opts, postcode.WithBaseURL(currentBase))
+		}
+		c, err := postcode.NewClient(opts...)
+		if err == nil {
+			client = c
+		}
+	}
+	return client
+}
+
+func resetClientLocked() {
+	var opts []postcode.ClientOption
+	if currentKey != "" {
+		opts = append(opts, postcode.WithAPIKey(currentKey))
+	}
+	if currentBase != "" {
+		opts = append(opts, postcode.WithBaseURL(currentBase))
+	}
+	c, err := postcode.NewClient(opts...)
+	if err == nil {
+		client = c
+	}
+}
+
+func jsSetAPIKey(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return false
+	}
+	key := args[0].String()
+	clientMu.Lock()
+	currentKey = key
+	resetClientLocked()
+	clientMu.Unlock()
+	return true
+}
+
+func jsGetAPIKey(this js.Value, args []js.Value) any {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return currentKey
+}
+
+func jsConfigure(this js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].Type() != js.TypeObject {
+		return false
+	}
+	optObj := args[0]
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	if optObj.Get("apiKey").Type() == js.TypeString {
+		currentKey = optObj.Get("apiKey").String()
+	}
+	if optObj.Get("baseURL").Type() == js.TypeString {
+		currentBase = optObj.Get("baseURL").String()
+	}
+	resetClientLocked()
+	return true
+}
+
+func jsLookup(this js.Value, args []js.Value) any {
+	promiseConstructor := js.Global().Get("Promise")
+
+	if len(args) == 0 {
+		var rejectHandler js.Func
+		rejectHandler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+			defer rejectHandler.Release()
+			errObj := js.Global().Get("Error").New("code parameter is required")
+			promiseArgs[1].Invoke(errObj)
+			return nil
+		})
+		return promiseConstructor.New(rejectHandler)
+	}
+
+	code := args[0].String()
+	level := 1
+	if len(args) > 1 && args[1].Type() == js.TypeNumber {
+		level = args[1].Int()
+	}
+
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+
+			resp, err := c.Lookup(context.Background(), code, postcode.LookupLevel(level))
+			if err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+
+			resolve.Invoke(toJS(resp))
+		}()
+		return nil
+	})
+
+	return promiseConstructor.New(handler)
+}
 
 func toJS(v any) js.Value {
 	b, err := json.Marshal(v)
@@ -118,6 +245,10 @@ func main() {
 	postcodeObj.Set("parse", js.FuncOf(jsParse))
 	postcodeObj.Set("resolveLocation", js.FuncOf(jsResolveLocation))
 	postcodeObj.Set("listStates", js.FuncOf(jsListStates))
+	postcodeObj.Set("setAPIKey", js.FuncOf(jsSetAPIKey))
+	postcodeObj.Set("getAPIKey", js.FuncOf(jsGetAPIKey))
+	postcodeObj.Set("configure", js.FuncOf(jsConfigure))
+	postcodeObj.Set("lookup", js.FuncOf(jsLookup))
 
 	js.Global().Set("Postcode", postcodeObj)
 

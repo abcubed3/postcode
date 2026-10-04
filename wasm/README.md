@@ -39,9 +39,52 @@ async function main() {
   // 4. Reference Data for all 36 States + FCT
   const states = postcode.listStates();
   console.log(states['LA']); // Lagos state info
+
+  // 5. Updating the NIPOST API Key & Online Lookup (L1-L3)
+  postcode.setAPIKey('nipost_live_your_api_key_here');
+  // Or: postcode.configure({ apiKey: '...', baseURL: 'https://api.postcode.gov.ng' });
+
+  // Query live NIPOST Gateway for commercial building data
+  const details = await postcode.lookup('EK 01 A03 FK 01', 3);
+  console.log(details.building_use_status);
 }
 
 main();
+```
+
+## Configuring the NIPOST API Key
+
+### 1. Offline vs. Online Boundary
+- **Offline Methods (No API Key Required)**: `validate()`, `diagnose()`, `parse()`, `resolveLocation()`, and `listStates()` run 100% offline in WebAssembly memory with zero network latency.
+- **Online Methods (API Key Configurable)**: `lookup()` connects to the live NIPOST Gateway (for commercial Level 2/3 street names, building use status, and GIS point geometry).
+
+### 2. Ways to Set or Update the API Key
+
+#### Option A: Dynamically at Runtime
+```javascript
+postcode.setAPIKey('nipost_live_your_new_key');
+```
+
+#### Option B: Full Configuration Object
+```javascript
+postcode.configure({
+  apiKey: 'nipost_live_your_key',
+  baseURL: 'https://api.postcode.gov.ng' // optional custom gateway
+});
+```
+
+#### Option C: At Engine Initialization
+```javascript
+const postcode = await initPostcode(undefined, {
+  apiKey: 'nipost_live_your_key'
+});
+```
+
+#### Option D: Automatic Environment Variable (Node.js)
+In Node.js, `initPostcode()` automatically detects `NIPOST_API_KEY` or `POSTCODE_API_KEY` from `process.env`.
+```bash
+export NIPOST_API_KEY=nipost_live_...
+node app.js
 ```
 
 ## Browser Usage

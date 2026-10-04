@@ -4,12 +4,14 @@
 *.dll
 *.so
 *.dylib
+*.wasm
 bin/
 
 # Test binaries and coverage
 *.test
 *.out
 cover.html
+wasm/.test.js
 
 # OS metadata
 .DS_Store

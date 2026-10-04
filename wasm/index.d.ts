@@ -53,6 +53,48 @@ export interface LocationResult {
   error?: string;
 }
 
+export interface AdministrativeAddress {
+  state?: string;
+  state_name?: string;
+  lga?: string;
+  lga_name?: string;
+  district?: string;
+  district_name?: string;
+  area?: string;
+  area_name?: string;
+  unit?: string;
+  zone?: string;
+  locality_name?: string;
+}
+
+export interface RecentHouseAddress {
+  address?: string;
+  recent?: string;
+  house_number?: string;
+  street_name?: string;
+  locality_name?: string;
+}
+
+export interface PointGeometry {
+  type?: string;
+  coordinates?: [number, number];
+}
+
+export interface LookupResponse {
+  postcode: string;
+  valid: boolean;
+  administrative_address?: AdministrativeAddress;
+  recent_house_address?: RecentHouseAddress;
+  building_use_status?: string;
+  other_building_info?: Record<string, any>;
+  point_geometry?: PointGeometry;
+}
+
+export interface PostcodeEngineOptions {
+  apiKey?: string;
+  baseURL?: string;
+}
+
 export interface StateRecord {
   code: string;
   name: string;
@@ -68,12 +110,18 @@ export interface PostcodeEngine {
   parse(code: string): any;
   resolveLocation(code: string): LocationResult;
   listStates(): Record<string, StateRecord>;
+  setAPIKey(key: string): boolean;
+  getAPIKey(): string;
+  configure(options: PostcodeEngineOptions): boolean;
+  lookup(code: string, level?: number): Promise<LookupResponse>;
 }
 
 /**
  * Initializes and instantiates the Postcode Nigeria WebAssembly module.
- * @param wasmSource Optional custom path, buffer, or fetch Response.
+ * @param wasmSourceOrOptions Optional custom path, buffer, fetch Response, or options object.
+ * @param options Optional configuration options when wasmSource is specified.
  */
 export function initPostcode(
-  wasmSource?: string | Buffer | ArrayBuffer | Response
+  wasmSourceOrOptions?: string | Buffer | ArrayBuffer | Response | PostcodeEngineOptions,
+  options?: PostcodeEngineOptions
 ): Promise<PostcodeEngine>;

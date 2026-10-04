@@ -13,11 +13,19 @@ if (typeof window === 'undefined' && typeof globalThis.Go === 'undefined') {
 
 /**
  * Initializes the Postcode WebAssembly module.
- * @param {string|Buffer|ArrayBuffer|Response} [wasmSource] Optional path, buffer, or fetch response.
+ * @param {string|Buffer|ArrayBuffer|Response|{ apiKey?: string, baseURL?: string }} [wasmSource] Optional path, buffer, fetch response, or options.
+ * @param {{ apiKey?: string, baseURL?: string }} [options] Optional configuration options.
  * @returns {Promise<typeof globalThis.Postcode>} The initialized Postcode module.
  */
-async function initPostcode(wasmSource) {
+async function initPostcode(wasmSource, options = {}) {
+  if (wasmSource && typeof wasmSource === 'object' && !(wasmSource instanceof ArrayBuffer) && !(typeof Buffer !== 'undefined' && Buffer.isBuffer(wasmSource)) && !(typeof Response !== 'undefined' && wasmSource instanceof Response)) {
+    options = wasmSource;
+    wasmSource = undefined;
+  }
+
   if (globalThis.Postcode) {
+    if (options.apiKey) globalThis.Postcode.setAPIKey(options.apiKey);
+    if (options.baseURL) globalThis.Postcode.configure({ baseURL: options.baseURL });
     return globalThis.Postcode;
   }
 
@@ -54,6 +62,16 @@ async function initPostcode(wasmSource) {
 
   // Run the Go runtime in background (it will register globalThis.Postcode)
   go.run(instance);
+
+  // Configure API key if provided via options or environment variable
+  const envKey = typeof process !== 'undefined' && process.env ? (process.env.NIPOST_API_KEY || process.env.POSTCODE_API_KEY) : undefined;
+  const apiKey = options.apiKey || envKey;
+  if (apiKey) {
+    globalThis.Postcode.setAPIKey(apiKey);
+  }
+  if (options.baseURL) {
+    globalThis.Postcode.configure({ baseURL: options.baseURL });
+  }
 
   return globalThis.Postcode;
 }
