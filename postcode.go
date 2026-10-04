@@ -121,6 +121,12 @@ func (p Postcode) Raw() string {
 	return string(p.raw[:])
 }
 
+// Compact returns the compact 11-character representation without delimiters (e.g. "EK01A03FK01").
+// Alias for Raw().
+func (p Postcode) Compact() string {
+	return p.Raw()
+}
+
 // Formatted returns the canonical hyphenated representation (e.g. "EK-01-A03-FK-01").
 func (p Postcode) Formatted() string {
 	if p.IsZero() {

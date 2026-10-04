@@ -36,6 +36,7 @@ func TestCLI_RootHelp(t *testing.T) {
 		"postcode [command]",
 		"Offline & Transformation Commands:",
 		"validate",
+		"diagnose",
 		"parse",
 		"format",
 		"coords",
@@ -51,6 +52,7 @@ func TestCLI_RootHelp(t *testing.T) {
 		"Operations & Developer Tools:",
 		"batch",
 		"serve",
+		"mcp",
 		"version",
 	}
 
@@ -370,5 +372,54 @@ func TestCLI_YAMLDeterminism(t *testing.T) {
 	}
 	if out1 != out2 {
 		t.Errorf("YAML output is not deterministic across multiple runs:\nRun1:\n%s\nRun2:\n%s", out1, out2)
+	}
+}
+
+func TestCLI_Diagnose(t *testing.T) {
+	t.Run("valid code", func(t *testing.T) {
+		out, _, err := executeCmd([]string{"diagnose", "EK 01 A03 FK 01"}, "")
+		if err != nil {
+			t.Fatalf("expected nil error for valid code, got: %v", err)
+		}
+		if !strings.Contains(out, "VALID: EK-01-A03-FK-01") {
+			t.Errorf("expected VALID output, got: %s", out)
+		}
+	})
+
+	t.Run("invalid code with suggestions", func(t *testing.T) {
+		out, _, err := executeCmd([]string{"diagnose", "ZZ 00 A03 FK 00"}, "")
+		if err == nil {
+			t.Fatal("expected error exit for invalid postcode")
+		}
+		if !strings.Contains(out, "INVALID") {
+			t.Errorf("expected INVALID in output, got: %s", out)
+		}
+		if !strings.Contains(out, "Suggestions:") {
+			t.Errorf("expected Suggestions in output, got: %s", out)
+		}
+	})
+
+	t.Run("json output", func(t *testing.T) {
+		out, _, err := executeCmd([]string{"diagnose", "EK 01 A03 FK 01", "-o", "json"}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out, `"valid": true`) {
+			t.Errorf("expected valid: true in JSON output, got: %s", out)
+		}
+	})
+}
+
+func TestCLI_MCP(t *testing.T) {
+	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`
+	out, errOut, err := executeCmd([]string{"mcp"}, initMsg+"\n")
+	if err != nil {
+		t.Fatalf("mcp command failed: %v", err)
+	}
+	if !strings.Contains(errOut, "postcode MCP server running on stdio") {
+		t.Errorf("expected startup log on stderr, got: %s", errOut)
+	}
+	if !strings.Contains(out, `"protocolVersion":"2024-11-05"`) {
+		t.Errorf("expected initialize response on stdout, got: %s", out)
 	}
 }

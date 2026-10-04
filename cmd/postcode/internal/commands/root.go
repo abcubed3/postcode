@@ -95,11 +95,18 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	serveCmd := NewServeCmd(v)
 	serveCmd.GroupID = "ops"
 
+	mcpCmd := NewMCPCmd(v)
+	mcpCmd.GroupID = "ops"
+
 	versionCmd := NewVersionCmd(v)
 	versionCmd.GroupID = "ops"
 
+	diagnoseCmd := NewDiagnoseCmd(v)
+	diagnoseCmd.GroupID = "offline"
+
 	rootCmd.AddCommand(
 		validateCmd,
+		diagnoseCmd,
 		parseCmd,
 		formatCmd,
 		coordsCmd,
@@ -113,6 +120,7 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		statusCmd,
 		batchCmd,
 		serveCmd,
+		mcpCmd,
 		versionCmd,
 	)
 

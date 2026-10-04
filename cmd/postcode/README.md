@@ -35,6 +35,8 @@
   - [11. Interactive Autocomplete (`autocomplete`)](#11-interactive-autocomplete-autocomplete)
   - [12. API Diagnostics & Rate Limits (`status`)](#12-API-diagnostics--rate-limits-status)
   - [13. Local Mock API Simulator (`serve`)](#13-local-mock-API-simulator-serve)
+  - [14. AI Diagnostic Inspection & Self-Correction (`diagnose`)](#14-ai-diagnostic-inspection--self-correction-diagnose)
+  - [15. Model Context Protocol Server (`mcp`)](#15-model-context-protocol-server-mcp)
 - [Production Recipes & Shell Integration](#production-recipes--shell-integration)
   - [Recipe A: Stream Processing with `jq` and `curl`](#recipe-a-stream-processing-with-jq-and-curl)
   - [Recipe B: Fast DB Data Cleaning in ETL Pipelines](#recipe-b-fast-db-data-cleaning-in-etl-pipelines)
@@ -537,6 +539,68 @@ To point your local queries to the mock simulator:
 ```bash
 postcode lookup EK-01-A03-FK-01 --api http://localhost:2340
 ```
+
+---
+
+### 14. AI Diagnostic Inspection & Self-Correction (`diagnose`)
+
+Perform segment-by-segment grammar, structural, and administrative inspection of candidate postcodes. Pinpoints exact segment errors, calculates character counts, generates candidate suggestions for typos, and produces actionable tips for AI agent self-correction:
+
+```bash
+# Diagnose an invalid postcode with typos and prohibited 00 codes
+postcode diagnose "ZZ 00 A03 FK 00"
+```
+```text
+✗ ZZ 00 A03 FK 00  -> INVALID (11/11 chars)
+    [State] State code "ZZ" is not a recognized Nigerian state code
+      Suggestions: ZA (Zamfara), SO (Sokoto)
+    [LGA] LGA code '00' is invalid; valid LGA codes range from 01 to 99
+      Suggestions: 01, 02
+    [BuildingUnit] Building unit code '00' is invalid; valid unit codes range from 01 to 99
+      Suggestions: 01, 02
+    Action: Fix State: consider ZA (Zamfara), SO (Sokoto); Fix LGA: consider 01, 02; Fix BuildingUnit: consider 01, 02
+```
+
+Export detailed JSON for automated agent error handling:
+```bash
+echo "LA 11 W06" | postcode diagnose -o json
+```
+
+---
+
+### 15. Model Context Protocol Server (`mcp`)
+
+Run an in-process Model Context Protocol (MCP) server over standard input/output (`stdio`), exposing postcode validation, diagnostics, geocoding, reverse search, and gazetteer resources directly to **Claude Desktop**, **Cursor**, and **Antigravity IDE**:
+
+```bash
+postcode mcp
+```
+
+#### Claude Desktop Setup
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "postcode": {
+      "command": "postcode",
+      "args": ["mcp"],
+      "env": {
+        "POSTCODE_API_KEY": "YOUR_NIPOST_API_KEY"
+      }
+    }
+  }
+}
+```
+
+#### Available Agent Tools via MCP
+- `validate_postcode`: Validates 11-character grammar, format, and state code.
+- `diagnose_postcode`: In-depth segment-by-segment analysis with suggestions.
+- `resolve_location`: Resolves coordinates, administrative metadata, and Google Maps URL.
+- `reverse_geocode`: Snaps latitude/longitude to the nearest postcode unit.
+- `search_nearby`: Searches for active units within a radius (default 300m).
+- `autocomplete_postcode`: Segment-aware autocomplete suggestions.
+- `lookup_postcode`: Graded official gateway query (L1 free, L2/L3 commercial).
+- `list_states`: Returns directory of all 36 States + FCT with capitals and centroids.
 
 ---
 

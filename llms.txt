@@ -1,0 +1,21 @@
+# Nigerian Postcode Go SDK (`postcode`)
+
+> High-performance, zero-allocation Go client library, CLI, and AI agent platform for Nigeria's National Digital Alphanumeric Postcode system (NIPOST).
+
+## Core Principles & Rules
+- **11-Character Alphanumeric Grammar**: Exact 5-segment structure: State(2 letters, A-Z) LGA(2 digits, 01-99) District(3 alnum) Area(2 letters, A-Z) Unit(2 digits, 01-99). The LGA and Building Unit segments cannot be '00'.
+- **Zero Heap Allocations**: `postcode.Parse()` parses and validates in ~28ns with 0 heap escapes (`0 B/op`). Backed by an immutable `[11]byte` struct.
+- **Lookup Levels & Quotas**: Responses from the NIPOST gateway (`GET /v1/lookup`) are graded:
+  - **Level 1 (Public/Free)**: Validity status (`valid: true|false`) and canonical postcode.
+  - **Level 2 (Commercial)**: Administrative address (State, LGA, District, Area) and street address.
+  - **Level 3 (Commercial)**: Full building use classification (residential, commercial, mixed). Standard commercial keys are strictly capped at Level 3.
+- **Offline Resolution**: `postcode.ResolveLocation()` and `p.Location()` resolve coordinates and Google Maps URLs locally using embedded reference centroids without network calls.
+- **AI Agent Native**: Native Model Context Protocol (MCP) server (`postcode mcp`), standard LLM tool schemas (`DefaultAgentTools()`), and actionable error diagnostics (`Diagnose()`).
+
+## Quick Navigation & Full Context
+- [Full LLM Specification & API Reference](llms-full.txt): Complete signatures, schemas, MCP config, and examples.
+- [Model Context Protocol (MCP)](llms-full.txt#model-context-protocol-mcp): How to connect to Claude Desktop, Cursor, and Antigravity IDE.
+- [Agent Tools & Function Calling](llms-full.txt#ai-agent-tools-and-function-calling): Ready-to-use schemas for OpenAI, Anthropic, Gemini, and LangChainGo.
+- [Diagnostics & Self-Correction](llms-full.txt#diagnostics-and-self-correction): Actionable segment-level error detection and suggestion engine.
+- [Core Go SDK Usage](llms-full.txt#core-sdk-reference): Client initialization, lookups, reverse geocoding, autocomplete.
+- [CLI Reference](llms-full.txt#cli-command-reference): Command syntax for `validate`, `diagnose`, `mcp`, `lookup`, `map`, and `serve`.

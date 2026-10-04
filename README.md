@@ -12,6 +12,7 @@ A high-performance, zero-allocation Go client library for Nigeria's National Dig
 - **Protocol Conformance**: Built to match the official NIPOST OpenAPI spec (`GET /v1/lookup`, `GET /v1/search/autocomplete`, `GET /v1/search/nearby`, `GET /v1/search/reverse`, and `POST /v1/assembly/assemble`).
 - **Resilient Transport**: Production-tuned HTTP transport with exponential backoff, full jitter, `Retry-After` header support, and safe connection draining.
 - **Pluggable Observability**: Zero external dependencies in the core module, with an optional OpenTelemetry module (`github.com/abcubed3/postcode/otelpostcode`).
+- **AI & Agent Native**: Built-in Model Context Protocol (MCP) server (`postcode mcp`), standard LLM function calling schemas (Gemini, OpenAI, Anthropic), and actionable diagnostic self-correction (`postcode.Diagnose`).
 
 ## Installation
 
@@ -133,11 +134,13 @@ go install github.com/abcubed3/postcode/cmd/postcode@latest
 ### Key CLI Capabilities
 
 - **Offline Validation**: `postcode validate "EK 01 A03 FK 01"` (grammar, format, state codes, exit codes).
+- **Diagnostic Self-Correction**: `postcode diagnose "ZZ 00 A03 FK 00"` (segment errors, state typo suggestions, agent tips).
 - **Segment Parsing**: `postcode parse "LA 11 W06 TC 10" -o json` (extracts State, LGA, District, Area, Unit, Zone).
 - **Format Normalization**: `cat dirty.txt | postcode format --style canonical` (Unix pipe friendly).
 - **Geocoding & Maps**: `postcode map EK-01-A03-FK-01` (generates Google Maps, Apple Maps, OSM URLs).
 - **Batch CSV Processing**: `postcode batch --input orders.csv --output enriched.csv --column postcode` (processes >350k rows/sec offline).
 - **Gateway Operations**: `postcode lookup`, `postcode autocomplete`, `postcode nearby`, `postcode reverse`, and `postcode status`.
+- **Model Context Protocol**: `postcode mcp` (exposes stdio MCP server for Claude Desktop, Cursor, Antigravity IDE).
 - **Embedded Simulator**: `postcode serve --port 2340` (runs local mock NIPOST gateway directly, with optional `--data` flag).
 
 > 📖 **Full User Guide**: For complete documentation, command options, and real-world recipes, see the **[CLI User Guide & Reference](cmd/postcode/README.md)**.
@@ -290,6 +293,62 @@ func main() {
 
     _, _ = client.Lookup(context.Background(), "EK 01 A03 FK 01", postcode.Level2)
 }
+```
+
+## AI Agents & Model Context Protocol (MCP)
+
+The `postcode` toolkit is engineered as a first-class geocoding foundation for AI models and autonomous agents.
+
+### 1. Model Context Protocol (MCP) Server
+
+Connect the toolkit directly to **Claude Desktop**, **Cursor**, **Antigravity IDE**, or custom agent runners using the standard MCP protocol:
+
+```bash
+# Start MCP server via CLI
+postcode mcp
+```
+
+**Claude Desktop Configuration** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "postcode": {
+      "command": "postcode",
+      "args": ["mcp"],
+      "env": {
+        "POSTCODE_API_KEY": "YOUR_NIPOST_API_KEY"
+      }
+    }
+  }
+}
+```
+
+### 2. Native LLM Function Calling (`postcode.DefaultAgentTools`)
+
+Export standard JSON-Schema Draft-07 tool declarations compatible with Google Gemini, OpenAI, and Anthropic:
+
+```go
+// 1. Get standard tool definitions
+tools := postcode.DefaultAgentTools()
+for _, t := range tools {
+    geminiDecl := t.GeminiFunctionDeclaration() // Google Gemini
+    openAIFunc := t.OpenAITool()                 // OpenAI / Mistral / Ollama
+    anthropicTool := t.AnthropicTool()           // Anthropic Claude
+}
+
+// 2. Dispatch tool calls seamlessly
+dispatcher := postcode.NewAgentDispatcher(client)
+jsonResult, err := dispatcher.DispatchString(ctx, toolName, argsJSON)
+```
+
+### 3. Diagnostic Self-Correction (`postcode.Diagnose`)
+
+Traditional validators return opaque errors that cause agents to hallucinate. `postcode.Diagnose()` generates structured, actionable guidance with typo suggestions that agents can use to self-correct in subsequent reasoning steps:
+
+```go
+report := postcode.Diagnose("ZZ 00 A03 FK 00")
+// report.Diagnoses -> Segment-by-segment errors with closest valid state suggestions
+// report.ActionableTip -> "Fix State: consider ZA (Zamfara); Fix LGA: 00 invalid (01-99)..."
 ```
 
 ## Benchmarks

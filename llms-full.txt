@@ -1,0 +1,257 @@
+# Nigerian Postcode Go SDK (`postcode`) — Full LLM Specification & Reference
+
+This document provides a comprehensive, machine-readable specification of the `postcode` Go library, CLI, and AI agent platform for LLMs, autonomous agents, and AI coding assistants.
+
+---
+
+## 1. Postcode Grammar & Structural Rules
+
+A valid Nigerian Digital Alphanumeric Postcode consists of exactly 11 alphanumeric characters divided into 5 administrative segments:
+
+| Segment | Position | Format | Constraints | Example | Meaning |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **State** | Chars 0..1 | 2 Letters (`A-Z`) | Must be one of 36 States or `FC` (FCT) | `EK` | Ekiti State |
+| **LGA** | Chars 2..3 | 2 Digits (`0-9`) | Valid range `01`-`99` (`00` is strictly invalid) | `01` | Ado Ekiti LGA |
+| **District** | Chars 4..6 | 3 Alphanumeric | Letters and digits | `A03` | Administrative District |
+| **Area** | Chars 7..8 | 2 Letters (`A-Z`) | Street / neighborhood axis | `FK` | Street Axis |
+| **Unit** | Chars 9..10 | 2 Digits (`0-9`) | Valid range `01`-`99` (`00` is strictly invalid) | `01` | Building / Parcel Unit |
+
+### Representation Formats
+- **Canonical Hyphenated**: `EK-01-A03-FK-01` (`p.Formatted()`)
+- **Spaced Display**: `EK 01 A03 FK 01` (`p.String()`)
+- **Compact**: `EK01A03FK01` (`p.Raw()`, `p.Compact()`)
+
+Delimiters (spaces and hyphens) are ignored during parsing. Lowercase letters are automatically normalized to uppercase without heap allocations.
+
+---
+
+## 2. Diagnostics & Agent Self-Correction
+
+Traditional boolean validators tell an agent that an input failed, but do not provide context to fix it. `postcode.Diagnose(raw)` provides structured, segment-level feedback designed for multi-turn LLM reasoning loops.
+
+### Diagnostic Types
+```go
+package postcode
+
+type SegmentDiagnosis struct {
+    Segment     string   `json:"segment"`               // "Length", "State", "LGA", "District", "Area", "BuildingUnit"
+    Input       string   `json:"input"`                 // The actual characters supplied
+    Expected    string   `json:"expected"`              // What the NIPOST grammar requires
+    Message     string   `json:"message"`               // Human & agent explanation
+    Suggestions []string `json:"suggestions,omitempty"` // Ranked candidate corrections (e.g. state typo matches)
+}
+
+type DiagnosticReport struct {
+    Input         string             `json:"input"`
+    Valid         bool               `json:"valid"`
+    Normalized    string             `json:"normalized,omitempty"`     // Hyphenated canonical form if valid
+    CleanLength   int                `json:"clean_length"`            // Count of alphanumeric characters found
+    Diagnoses     []SegmentDiagnosis `json:"diagnoses,omitempty"`
+    ActionableTip string             `json:"actionable_tip,omitempty"` // Single summary string advising next action
+}
+
+func Diagnose(raw string) DiagnosticReport
+```
+
+### Self-Correction Example
+If an LLM passes `"ZZ 00 A03 FK 00"`, `Diagnose` returns:
+- `Segment: "State"` -> `"State code 'ZZ' is not a recognized Nigerian state code"`, `Suggestions: ["ZA (Zamfara)", "SO (Sokoto)"]`
+- `Segment: "LGA"` -> `"LGA code '00' is invalid; valid LGA codes range from 01 to 99"`, `Suggestions: ["01", "02"]`
+- `Segment: "BuildingUnit"` -> `"Building unit code '00' is invalid; valid unit codes range from 01 to 99"`, `Suggestions: ["01", "02"]`
+- `ActionableTip`: `"Fix State: consider ZA (Zamfara), SO (Sokoto); Fix LGA: consider 01, 02; Fix BuildingUnit: consider 01, 02"`
+
+The agent can directly read `ActionableTip` and correct its query in the next turn without hallucination.
+
+---
+
+## 3. AI Agent Tools and Function Calling
+
+The SDK exports ready-to-use function declarations compatible with **Google Gemini**, **OpenAI**, **Anthropic Claude**, and **LangChainGo**:
+
+```go
+package postcode
+
+// Return pre-configured JSON Schema Draft-07 tool declarations
+tools := postcode.DefaultAgentTools()
+
+for _, t := range tools {
+    // OpenAI, Mistral, Groq, Ollama
+    openAIFunction := t.OpenAITool()
+
+    // Anthropic Claude Messages API
+    anthropicTool := t.AnthropicTool()
+
+    // Google Gemini / Google GenAI SDK
+    geminiDeclaration := t.GeminiFunctionDeclaration()
+}
+```
+
+### Tool Dispatcher
+The `AgentDispatcher` handles incoming tool executions:
+```go
+// 1. Create dispatcher (offline mode if client is nil, or online mode with client)
+dispatcher := postcode.NewAgentDispatcher(client)
+
+// 2. Dispatch tool execution by name and raw JSON arguments
+result, err := dispatcher.Dispatch(ctx, toolName, argsJSON)
+
+// 3. Or return serialized JSON string for direct tool response insertion
+jsonStr, err := dispatcher.DispatchString(ctx, toolName, argsJSON)
+```
+
+### Standard Available Tools
+1. `validate_postcode`: Validates 11-character grammar, format, and state code.
+2. `diagnose_postcode`: Performs in-depth segment analysis with typo suggestions and self-correction tips.
+3. `resolve_location`: Resolves coordinates (lat/lng), State, LGA, Google Maps and Apple Maps URLs.
+4. `reverse_geocode`: Snaps latitude/longitude coordinates to the nearest active postcode unit.
+5. `search_nearby`: Searches for active postcode units within a radius (default 300m) of coordinates.
+6. `autocomplete_postcode`: Returns segment-aware suggestions for partial postcode input.
+7. `lookup_postcode`: Queries gateway for graded attributes (Level 1 free, Level 2/3 commercial).
+8. `list_states`: Lists all 36 Nigerian states and FCT with capitals, zones, and centroids.
+
+---
+
+## 4. Model Context Protocol (MCP)
+
+The SDK includes a built-in dual-era Model Context Protocol (MCP) server adhering to the latest **MCP 2026-07-28** specification (stateless `_meta`, mandatory `server/discover`, `resultType: "complete"`, caching hints `ttlMs`/`cacheScope`) while providing backward compatibility with `2025-11-25` and `2024-11-05` initialization-based legacy handshakes.
+
+### Running via CLI
+```bash
+postcode mcp
+```
+
+### Adding to Claude Desktop
+File: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+```json
+{
+  "mcpServers": {
+    "postcode": {
+      "command": "postcode",
+      "args": ["mcp"],
+      "env": {
+        "POSTCODE_API_KEY": "YOUR_NIPOST_API_KEY"
+      }
+    }
+  }
+}
+```
+
+### Adding to Cursor / Antigravity IDE (`mcp_config.json`)
+```json
+{
+  "mcpServers": {
+    "postcode": {
+      "command": "postcode",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### In-Process Go MCP Server
+```go
+package main
+
+import (
+    "os"
+    "github.com/abcubed3/postcode"
+)
+
+func main() {
+    client, _ := postcode.NewClient(postcode.WithAPIKey("..."))
+    server := postcode.NewMCPServer(client)
+    _ = server.Serve(os.Stdin, os.Stdout)
+}
+```
+
+### Exposed MCP Primitives
+- **Tools**: `validate_postcode`, `diagnose_postcode`, `resolve_location`, `reverse_geocode`, `search_nearby`, `autocomplete_postcode`, `lookup_postcode`, `list_states`.
+- **Resources**:
+  - `postcode://states`: Directory of 36 States + FCT with capitals, zones, and centroids (`application/json`).
+  - `postcode://grammar`: Official 11-digit NIPOST structural grammar specification (`text/markdown`).
+- **Prompts**:
+  - `normalize-nigerian-address`: Step-by-step instructions for extracting and resolving informal Nigerian addresses to canonical postcodes.
+
+---
+
+## 5. Core SDK Reference
+
+### Basic Parsing (Zero Allocation)
+```go
+p, err := postcode.Parse("EK 01 A03 FK 01")
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(p.Formatted())   // "EK-01-A03-FK-01"
+fmt.Println(p.Compact())     // "EK01A03FK01"
+fmt.Println(p.State())       // "EK"
+fmt.Println(p.LGA())         // "01"
+fmt.Println(p.District())    // "A03"
+fmt.Println(p.Area())        // "FK"
+fmt.Println(p.BuildingUnit())// "01"
+```
+
+### Offline Geocoding & Mapping
+```go
+loc, err := postcode.ResolveLocation("EK-01-A03-FK-01")
+if err != nil {
+    log.Fatal(err)
+}
+
+lat, lng := loc.Coordinates()
+mapsURL := loc.GoogleMapsURL()
+appleURL := loc.AppleMapsURL()
+osmURL := loc.OpenStreetMapURL()
+```
+
+### Gateway Client & Graded Lookups
+```go
+client, err := postcode.NewClient(
+    postcode.WithAPIKey("nipost_live_..."),
+    postcode.WithRateLimitRetry(true, 5*time.Second),
+)
+
+// Level 1: Free public validity check
+l1, err := client.Lookup(ctx, "EK-01-A03-FK-01", postcode.Level1)
+
+// Level 2: Commercial administrative address and street address
+l2, err := client.Lookup(ctx, "EK-01-A03-FK-01", postcode.Level2)
+
+// Level 3: Commercial building use classification (Official commercial max)
+l3, err := client.Lookup(ctx, "EK-01-A03-FK-01", postcode.Level3)
+```
+
+### Gateway Rate Limits
+- Rate limits return `HTTP 429` with `Retry-After` and `X-RateLimit-Reset` headers.
+- Inspect quota anytime: `client.RateLimit() -> *RateLimitInfo` (contains `Remaining`, `Limit`, `ResetAt`).
+- Detect rate limits: `apiErr.IsRateLimit() == true`.
+- Detect credit exhaustion: `apiErr.IsInsufficientCredits() == true`.
+
+---
+
+## 6. CLI Command Reference
+
+Install CLI:
+```bash
+go install github.com/abcubed3/postcode/cmd/postcode@latest
+```
+
+| Command | Category | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `postcode validate [codes...]` | Offline | Check grammar and state codes | `postcode validate "EK 01 A03 FK 01"` |
+| `postcode diagnose [codes...]` | Offline | In-depth error diagnosis with suggestions | `postcode diagnose "ZZ 00 A03 FK 00"` |
+| `postcode parse [codes...]` | Offline | Extract administrative segments | `postcode parse EK-01-A03-FK-01 -o json` |
+| `postcode format [codes...]` | Offline | Reformat (`--style canonical\|spaced\|compact`) | `cat list.txt \| postcode format` |
+| `postcode coords [codes...]` | Offline | Extract latitude/longitude coordinates | `postcode coords EK-01-A03-FK-01` |
+| `postcode map [codes...]` | Offline | Generate Google/Apple/OSM map URLs | `postcode map EK-01-A03-FK-01` |
+| `postcode assemble` | Offline | Combine segments into canonical code | `postcode assemble --state EK --lga 01 ...` |
+| `postcode disassemble [code]`| Offline | Decompose code into segments | `postcode disassemble EK-01-A03-FK-01` |
+| `postcode lookup [code]` | Gateway | Query live NIPOST api (`--level 1..3`) | `postcode lookup EK-01-A03-FK-01` |
+| `postcode autocomplete [q]` | Gateway | Segment-aware suggestions | `postcode autocomplete "EK 01 A"` |
+| `postcode nearby` | Gateway | Search units near coordinates | `postcode nearby --lat 7.62 --lng 5.22` |
+| `postcode reverse` | Gateway | Snap coordinates to nearest unit | `postcode reverse --lat 7.62 --lng 5.22` |
+| `postcode status` | Gateway | Inspect gateway connectivity & quota | `postcode status` |
+| `postcode batch` | Ops | Batch process CSV (>350k rows/s) | `postcode batch -i in.csv -o out.csv` |
+| `postcode serve` | Ops | Start in-memory mock NIPOST api | `postcode serve --port 2340` |
+| `postcode mcp` | Ops | Start Model Context Protocol server | `postcode mcp` |
