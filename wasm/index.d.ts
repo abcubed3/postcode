@@ -17,6 +17,43 @@ export interface ValidationResult {
   clean_length?: number;
 }
 
+export interface Segments {
+  valid?: boolean;
+  error?: string;
+  state: string;
+  lga: string;
+  district: string;
+  area: string;
+  unit: string;
+}
+
+export interface AssembledPostcode {
+  valid: boolean;
+  error?: string;
+  postcode?: string;
+  display?: string;
+  compact?: string;
+}
+
+export interface ParsedPostcode {
+  valid: boolean;
+  input?: string;
+  postcode?: string;
+  formatted?: string;
+  compact?: string;
+  spaced?: string;
+  state_code?: string;
+  state_name?: string;
+  lga_code?: string;
+  lga_name?: string;
+  district?: string;
+  area?: string;
+  unit?: string;
+  zone?: string;
+  state_capital?: string;
+  error?: string;
+}
+
 export interface SegmentDiagnosis {
   segment: 'Length' | 'State' | 'LGA' | 'District' | 'Area' | 'BuildingUnit';
   input: string;
@@ -41,15 +78,19 @@ export interface LocationResult {
   latitude: number;
   longitude: number;
   address?: string;
+  state?: string;
   state_code: string;
   state_name: string;
+  lga?: string;
   lga_code?: string;
   lga_name?: string;
   zone?: string;
   precision: 'building' | 'area' | 'district' | 'lga' | 'state' | number;
   google_maps_url: string;
+  google_maps_directions_url?: string;
   apple_maps_url: string;
   osm_url: string;
+  search_query?: string;
   error?: string;
 }
 
@@ -90,6 +131,63 @@ export interface LookupResponse {
   point_geometry?: PointGeometry;
 }
 
+export interface AutocompleteSuggestion {
+  postcode: string;
+  description: string;
+  score?: number;
+}
+
+export interface AutocompleteResponse {
+  query: string;
+  suggestions: AutocompleteSuggestion[];
+}
+
+export interface NearbyUnit {
+  postcode: string;
+  display: string;
+  distance_m: number;
+  confidence: string;
+  state_name?: string;
+  lga_name?: string;
+  address?: string;
+}
+
+export interface NearbyResponse {
+  results: NearbyUnit[];
+}
+
+export interface ReverseResponse {
+  latitude: number;
+  longitude: number;
+  postcode: string;
+  distance_m?: number;
+  location?: LocationResult;
+}
+
+export interface AgentGuardMetrics {
+  total_calls: number;
+  commercial_calls: number;
+  downgraded_calls: number;
+  offline_fallbacks: number;
+}
+
+export interface SyntheticAddress {
+  raw_text: string;
+  expected_state: string;
+  expected_state_code: string;
+  expected_lga?: string;
+  expected_postcode?: string;
+  expected_lat?: number;
+  expected_lng?: number;
+  noise_type?: string;
+}
+
+export interface GeneratorOptions {
+  count?: number;
+  noiseRate?: number;
+  seed?: number;
+}
+
 export interface PostcodeEngineOptions {
   apiKey?: string;
   baseURL?: string;
@@ -105,15 +203,35 @@ export interface StateRecord {
 }
 
 export interface PostcodeEngine {
+  // --- 1. Core Offline (Sync) ---
   validate(code: string): ValidationResult;
+  validateBatch(codes: string[]): ValidationResult[];
   diagnose(code: string): DiagnosticReport;
-  parse(code: string): any;
+  parse(code: string): ParsedPostcode;
+  format(code: string, style?: 'canonical' | 'compact' | 'spaced' | 'hyphenated' | 'slug'): string;
+  assemble(segments: { state: string; lga: string; district: string; area: string; unit: string }): AssembledPostcode;
+  disassemble(code: string): Segments;
   resolveLocation(code: string): LocationResult;
   listStates(): Record<string, StateRecord>;
+
+  // --- 2. Configuration & State (Sync) ---
   setAPIKey(key: string): boolean;
   getAPIKey(): string;
   configure(options: PostcodeEngineOptions): boolean;
+
+  // --- 3. Live Gateway Operations (Async) ---
   lookup(code: string, level?: number): Promise<LookupResponse>;
+  autocomplete(query: string): Promise<AutocompleteResponse>;
+  nearby(params: { latitude: number; longitude: number; radiusKm?: number; radius_m?: number; limit?: number }): Promise<NearbyResponse>;
+  reverseGeocode(params: { latitude: number; longitude: number; maxDistanceKm?: number; max_distance_m?: number }): Promise<ReverseResponse>;
+
+  // --- 4. AI Agent Tooling & Guardrails ---
+  getAgentTools(format?: 'openai' | 'anthropic' | 'gemini'): any[];
+  executeTool(name: string, args?: Record<string, any> | string): Promise<any>;
+  getAgentMetrics(): AgentGuardMetrics;
+
+  // --- 5. Synthetic Evaluation Benchmark ---
+  generateSyntheticAddresses(options?: GeneratorOptions): SyntheticAddress[];
 }
 
 /**

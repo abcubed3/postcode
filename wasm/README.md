@@ -1,12 +1,14 @@
 # Postcode Nigeria WebAssembly (WASM)
 
-Zero-dependency, offline-first Nigerian Postcode engine compiled to WebAssembly. Enables AI agents, edge workers, mobile apps, and web browsers to perform high-speed validation, diagnostics, and geocoding without network overhead.
+Zero-dependency, offline-first Nigerian Postcode engine compiled to WebAssembly. Enables AI agents, edge workers, mobile apps, and web browsers to perform high-speed validation, diagnostics, formatting, administrative segment parsing/assembly, geocoding, and agent tool execution without network overhead.
 
 ## Features
 
 - **Blazing Fast**: Microsecond execution on edge runtimes (Cloudflare Workers, Fastly, Vercel Edge, AWS Lambda@Edge).
-- **Zero Network Overhead**: Performs full validation, format repair tips, and geocoding offline.
-- **Cross-Platform**: Runs in Node.js, Deno, Bun, web browsers, and Python (via `wasmtime` / `wasmer`).
+- **Full Parity with Go Native**: Exposes all 19 Go library and CLI capabilities directly to Node.js, Bun, Deno, and web browsers.
+- **Zero Network Overhead (Offline Core)**: Validation, batch validation, format repair tips, parsing, formatting, segment assembly/disassembly, geocoding, and synthetic address benchmarking run 100% offline in WASM memory.
+- **NIPOST Gateway Integration (Online)**: Level 1–3 lookups, address autocompletion, radius-based nearby search, and reverse geocoding via standard async Promises.
+- **Native AI Agent Protocols**: Pre-formatted tool definitions ready for OpenAI (`function`), Anthropic (`input_schema`), and Google Gemini (`functionDeclarations`), with a unified `executeTool` dispatcher and telemetry guardrails.
 
 ## Building the WASM Binary
 
@@ -17,46 +19,107 @@ GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
 ## Quick Start (Node.js / Edge)
 
 ```javascript
-const { initPostcode } = require('./wasm/index.js');
+const { initPostcode } = require('@abcubed3/postcode-wasm');
 
 async function main() {
   const postcode = await initPostcode();
 
-  // 1. Validate Postcode
+  // 1. Single & Batch Validation
   const valid = postcode.validate('EK 01 A03 FK 01');
-  console.log(valid.valid); // true
-  console.log(valid.state_name); // 'Ekiti'
+  console.log(valid.valid, valid.state_name); // true, 'Ekiti'
 
-  // 2. Intelligent Diagnostic Engine
+  const batch = postcode.validateBatch(['EK 01 A03 FK 01', 'LA 11 W06 TC 10', 'INVALID']);
+  console.log(batch.map(r => r.valid)); // [true, true, false]
+
+  // 2. Formatting & Styles (canonical, spaced, compact, slug)
+  console.log(postcode.format('EK 01 A03 FK 01', 'compact')); // 'EK01A03FK01'
+  console.log(postcode.format('EK01A03FK01', 'canonical'));   // 'EK-01-A03-FK-01'
+  console.log(postcode.format('EK 01 A03 FK 01', 'slug'));    // 'ek-01-a03-fk-01'
+
+  // 3. Administrative Disassembly & Assembly
+  const segs = postcode.disassemble('EK-01-A03-FK-01');
+  // { state: 'EK', lga: '01', district: 'A03', area: 'FK', unit: '01' }
+
+  const assembled = postcode.assemble({
+    state: 'LA', lga: '11', district: 'W06', area: 'TC', unit: '10'
+  });
+  console.log(assembled.postcode, assembled.display); // 'LA-11-W06-TC-10', 'LA 11 W06 TC 10'
+
+  // 4. Intelligent Diagnostic Engine
   const diag = postcode.diagnose('10001');
   console.log(diag.actionable_tip);
   // "Fix Length: Exactly 11 alphanumeric characters (e.g. 'EK 01 A03 FK 01'); Fix State: consider LA (Lagos)..."
 
-  // 3. Offline Geolocation & Coordinates
+  // 5. Offline Geolocation & Universal Maps
   const loc = postcode.resolveLocation('EK 01 A03 FK 01');
-  console.log(loc.latitude, loc.longitude, loc.google_maps_url);
+  console.log(loc.latitude, loc.longitude);
+  console.log(loc.google_maps_directions_url); // Navigation URL
+  console.log(loc.apple_maps_url);              // Apple Maps URL
 
-  // 4. Reference Data for all 36 States + FCT
-  const states = postcode.listStates();
-  console.log(states['LA']); // Lagos state info
+  // 6. AI Agent Protocol (OpenAI, Anthropic, Gemini)
+  const openAITools = postcode.getAgentTools('openai');
+  const toolResult = await postcode.executeTool('validate_postcode', { code: 'EK 01 A03 FK 01' });
+  console.log('Agent tool execution:', toolResult.valid, toolResult.state_name);
 
-  // 5. Updating the NIPOST API Key & Online Lookup (L1-L3)
+  // 7. Synthetic Address Generation for LLM Benchmarking
+  const dataset = postcode.generateSyntheticAddresses({ count: 5, noiseRate: 0.2 });
+  console.log(dataset[0].raw_text, dataset[0].expected_postcode);
+
+  // 8. Live Gateway Operations (L1-L3 Lookup, Autocomplete, Nearby, Reverse Geocoding)
   postcode.setAPIKey('nipost_live_your_api_key_here');
-  // Or: postcode.configure({ apiKey: '...', baseURL: 'https://api.postcode.gov.ng' });
 
   // Query live NIPOST Gateway for commercial building data
   const details = await postcode.lookup('EK 01 A03 FK 01', 3);
   console.log(details.building_use_status);
+
+  // Autocomplete search
+  const suggestions = await postcode.autocomplete('Adetokunbo');
+  console.log(suggestions.results);
+
+  // Search nearby units
+  const nearby = await postcode.nearby({ latitude: 6.6018, longitude: 3.3515, radiusKm: 2 });
+  console.log(nearby.results);
 }
 
 main();
 ```
 
+## API Reference
+
+### Core Offline Engine (Sync)
+| Method | Description |
+|---|---|
+| `validate(code: string): ValidationResult` | Instant 11-char grammar & state validation. |
+| `validateBatch(codes: string[]): ValidationResult[]` | High-throughput batch validation in WebAssembly memory. |
+| `diagnose(code: string): DiagnosticReport` | Granular per-segment error detection with fuzzy repair tips. |
+| `parse(code: string): ParsedPostcode` | Extracts full parsed model with capital, zone, and components. |
+| `format(code: string, style?: string): string` | Normalizes to `canonical`, `compact`, `spaced`, `hyphenated`, or `slug`. |
+| `assemble(segments: Segments): AssembledPostcode` | Assembles 5 administrative segments into canonical, display, and compact codes. |
+| `disassemble(code: string): Segments` | Decomposes code into state, LGA, district, area, and building unit. |
+| `resolveLocation(code: string): LocationResult` | Resolves offline centroid coordinates, Google Maps, Apple Maps, and OSM links. |
+| `listStates(): Record<string, StateRecord>` | Returns static dictionary of all 36 Nigerian States + FCT. |
+
+### AI Agent Protocol & Benchmarking
+| Method | Description |
+|---|---|
+| `getAgentTools(format?: 'openai' \| 'anthropic' \| 'gemini'): any[]` | Exports JSON schemas for agent function calling. |
+| `executeTool(name: string, args: any): Promise<any>` | Directly invokes agent tool handlers with structured responses. |
+| `getAgentMetrics(): AgentGuardMetrics` | Telemetry for commercial vs. offline calls and downgrade rates. |
+| `generateSyntheticAddresses(options?: GeneratorOptions): SyntheticAddress[]` | Generates realistic dirty/clean addresses with ground truth for LLM evaluation. |
+
+### Live Gateway Operations (Async)
+| Method | Description |
+|---|---|
+| `lookup(code: string, level?: number): Promise<LookupResponse>` | Queries NIPOST Gateway for Level 1, 2, or 3 commercial metadata. |
+| `autocomplete(query: string): Promise<AutocompleteResponse>` | Real-time address and street suggestions. |
+| `nearby(params: NearbyParams): Promise<NearbyResponse>` | Radius search for postcode units surrounding a coordinate. |
+| `reverseGeocode(params: ReverseParams): Promise<ReverseResponse>` | Reverse-resolves latitude and longitude into nearest valid postcode. |
+
 ## Configuring the NIPOST API Key
 
 ### 1. Offline vs. Online Boundary
-- **Offline Methods (No API Key Required)**: `validate()`, `diagnose()`, `parse()`, `resolveLocation()`, and `listStates()` run 100% offline in WebAssembly memory with zero network latency.
-- **Online Methods (API Key Configurable)**: `lookup()` connects to the live NIPOST Gateway (for commercial Level 2/3 street names, building use status, and GIS point geometry).
+- **Offline Methods (No API Key Required)**: `validate()`, `validateBatch()`, `diagnose()`, `parse()`, `format()`, `assemble()`, `disassemble()`, `resolveLocation()`, `listStates()`, `getAgentTools()`, and `generateSyntheticAddresses()` run 100% offline in WebAssembly memory with zero network latency.
+- **Online Methods (API Key Configurable)**: `lookup()`, `autocomplete()`, `nearby()`, and `reverseGeocode()` connect to the live NIPOST Gateway (for commercial Level 2/3 street names, building use status, and GIS point geometry).
 
 ### 2. Ways to Set or Update the API Key
 
@@ -100,6 +163,9 @@ node app.js
     // window.Postcode is now globally available
     const res = window.Postcode.validate("EK 01 A03 FK 01");
     console.log(res);
+
+    const loc = window.Postcode.resolveLocation("EK 01 A03 FK 01");
+    console.log("Directions:", loc.google_maps_directions_url);
   }
   loadWasm();
 </script>
