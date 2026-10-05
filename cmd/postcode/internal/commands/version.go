@@ -4,16 +4,37 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
-	Version   = "v0.1.0"
+	Version   = "dev"
 	GitCommit = "dev"
 	BuildDate = "unknown"
 )
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if (Version == "" || Version == "dev" || Version == "v0.1.0") && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			Version = info.Main.Version
+		}
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				if GitCommit == "" || GitCommit == "dev" {
+					GitCommit = s.Value
+				}
+			case "vcs.time":
+				if BuildDate == "" || BuildDate == "unknown" {
+					BuildDate = s.Value
+				}
+			}
+		}
+	}
+}
 
 type VersionInfo struct {
 	Version   string `json:"version"`

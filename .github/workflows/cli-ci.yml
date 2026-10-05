@@ -1,4 +1,4 @@
-name: NG Postcode CLI CI
+name: Postcode CI
 
 on:
   push:
