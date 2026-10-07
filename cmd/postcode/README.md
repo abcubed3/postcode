@@ -138,9 +138,12 @@ postcode assemble --state EK --lga 01 --district A03 --area FK --unit 01
 postcode batch --input customers.csv --output enriched.csv --column shipping_postcode
 
 # 9. Reverse geocode a GPS latitude/longitude to the nearest postcode unit
-postcode reverse --lat 7.6211 --lng 5.2215
+postcode reverse 7.6211 5.2215
 
-# 10. Start a local zero-latency mock NIPOST server for testing
+# 10. Search for nearby units surrounding a postcode or GPS coordinate
+postcode nearby LA-08-A86-RG-01 --radius 250
+
+# 11. Start a local zero-latency mock NIPOST server for testing
 postcode serve --port 2340
 ```
 
@@ -340,30 +343,44 @@ postcode format "  la-11-w06-tc-10  " --style compact
 
 ### 4. Coordinates & Geocoding (`coords`)
 
-Extracts GPS coordinates (Latitude & Longitude) and precision level (`building`, `district`, `lga`, `state`) using the offline centroid dataset.
+Extracts GPS coordinates (Latitude & Longitude) and precision level (`building`, `district`, `lga`, `state`).
+
+By default, `coords` operates online using a multi-stage geocoding pipeline:
+1. Queries the NIPOST gateway at Level 3 down to Level 1 for authoritative administrative hierarchy and house address text.
+2. If explicit point geometry is returned, it is adopted immediately.
+3. If not, the address query is resolved via Google Maps Geocoding API (`GOOGLE_MAPS_API_KEY`) with automatic fallback to OpenStreetMap Nominatim.
+4. Resolved coordinates are automatically cached to `~/.postcode/cache.json` for instant subsequent lookups.
+5. If offline or unauthenticated, it seamlessly falls back to local reference centroids and cached records.
 
 ```bash
+# Default online multi-stage resolution
 postcode coords EK-01-A03-FK-01
+
+# Provide Google Maps API key for high-precision geocoding
+postcode coords EK-01-A03-FK-01 --google-maps-api-key <key>
+
+# Force local offline resolution only (no network)
+postcode coords EK-01-A03-FK-01 --offline
 ```
 ```text
 EK-01-A03-FK-01  -> Lat:   7.621100, Lng:   5.221500 [building] (NTA Road, Back of Fabian Hotel, Ado Ekiti - Ekiti)
-```
-
-#### Online API Enrichment
-Pass `--online` to query live NIPOST boundary layers for coordinate resolution:
-```bash
-postcode coords EK-01-A03-FK-01 --online
 ```
 
 ---
 
 ### 5. Mapping & Directions (`map`)
 
-Generates navigation and mapping URLs for coordinates derived from postcodes.
+Generates navigation and universal mapping URLs for coordinates derived from postcodes.
+
+* **Smart Query URLs**: Pinpoint exact `query=lat,lng` for building-level units, or construct rich search queries (`query=Address, LGA, State, Nigeria`) for coarse locations so Google Maps dynamically drops the pin on the street/area.
+* Defaults to online resolution with seamless offline fallback.
 
 ```bash
-# Generate Google Maps Search URL (default)
+# Generate smart Google Maps Search URL (default)
 postcode map EK-01-A03-FK-01
+
+# Run strictly offline
+postcode map EK-01-A03-FK-01 --offline
 
 # Generate turn-by-turn directions link
 postcode map EK-01-A03-FK-01 --directions
@@ -435,9 +452,12 @@ cat raw_orders.csv | postcode batch --input - --output - --column shipping_code 
 Performs live verification against the official NIPOST API (`api.postcode.gov.ng`).
 
 Supports three levels of verification via `-l` / `--level`:
-- **Level 1 (Default)**: Postal validation and administrative assignment.
-- **Level 2**: Detailed address geocoding and street attributes.
-- **Level 3**: Building use classification and parcel boundary coordinates.
+- **Level 1 (Default)**: Postal validation and administrative assignment (free/public).
+- **Level 2**: Detailed administrative address and street attributes (commercial).
+- **Level 3**: Building use classification (residential, commercial, mixed, etc. — official commercial maximum).
+
+> [!NOTE]
+> Standard commercial API keys are strictly capped at Level 3. Commercial lookups do not have access to Level 4 or Level 5. Building coordinate resolution (`coords --online` / `map --online`) utilizes NIPOST's public cadastral discovery layer and local caching.
 
 ```bash
 # Basic lookup
@@ -457,6 +477,10 @@ postcode lookup EK-01-A03-FK-01 --level 3 -o json
 Converts a GPS latitude and longitude coordinate into the closest official postal unit.
 
 ```bash
+# Pass coordinates as positional arguments
+postcode reverse 7.621100 5.221500
+
+# Or via explicit flags
 postcode reverse --lat 7.621100 --lng 5.221500 --max-dist 50
 ```
 ```text
@@ -476,9 +500,13 @@ Address:       NTA Road, Back of Fabian Hotel, Ado Ekiti
 
 ### 10. Radial Proximity Search (`nearby`)
 
-Finds all registered postal units within a specific radial distance (up to 300 meters) from a GPS coordinate:
+Finds all registered postal units within a specific radial distance (up to 300 meters) from a postcode or GPS coordinate:
 
 ```bash
+# Search around a reference postcode (auto-resolves centroid coordinates)
+postcode nearby LA-08-A86-RG-01 --radius 250
+
+# Or search around explicit GPS coordinates
 postcode nearby --lat 7.6211 --lng 5.2215 --radius 250
 ```
 
@@ -631,6 +659,52 @@ Export benchmark datasets to JSON for use with LangSmith, Promptfoo, Braintrust,
 ```bash
 postcode eval --samples 500 --noise 0.4 --export benchmarks/nigerian_addresses.json
 ```
+
+---
+
+### 17. Persistent Offline Cache & Custom Datasets (`cache`)
+
+Manage the local high-precision building database stored at `~/.postcode/cache.json`.
+
+Whenever a postcode is resolved online via `--online` or the NIPOST gateway, its pinpoint building coordinates (`[building]` precision) are **automatically saved to this local cache**. Subsequent queries—even completely offline—resolve instantly with exact building coordinates.
+
+```bash
+# Check cache statistics and location
+postcode cache status
+
+# List all locally cached building units and coordinates
+postcode cache list
+
+# Import custom or enterprise address datasets (CSV or JSON)
+postcode cache import custom_buildings.csv
+postcode cache import national_parcels.json
+
+# Clear the local cache
+postcode cache clear
+```
+
+#### CSV Import Format
+```csv
+postcode,latitude,longitude,address,state_name,lga_name
+LA-08-A86-RG-01,6.476111,3.633990,"Eti-Osa, Lekki, Lagos",Lagos,Eti-Osa
+FC-03-B06-AG-12,9.057900,7.495100,"12 Shehu Shagari Way, Garki",Federal Capital Territory,Abuja Municipal
+```
+
+#### Always Pull from NIPOST (Online Mode by Default)
+To configure the CLI to **always pull from NIPOST** without having to pass `--online` every time:
+
+1. **Via Configuration File (`~/.postcode.yaml`)**:
+   ```yaml
+   apikey: "nipost_test_6086d679d68ff50d1c85088abc654b938470bdd2eb651afe"
+   online: true
+   ```
+2. **Via Environment Variables**:
+   ```bash
+   export POSTCODE_API_KEY="nipost_test_6086d679d68ff50d1c85088abc654b938470bdd2eb651afe"
+   export POSTCODE_ONLINE=true
+   ```
+
+When online mode is enabled, `postcode coords` and `postcode map` automatically contact NIPOST for exact building point geometry and automatically persist the coordinates to your local offline cache!
 
 ---
 

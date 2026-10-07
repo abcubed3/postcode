@@ -114,11 +114,13 @@ func main() {
 | `postcode.Coordinates(code)` | Offline / Local | Returns `(latitude, longitude)` for an 11-digit postcode string. |
 | `postcode.ResolveLocation(code)` | Offline / Local | Resolves `Location` struct (lat/long, precision, Google Maps/Apple/OSM URLs). |
 | `p.GoogleMapsURL()` | Method on `Postcode` | Zero-allocation / sub-microsecond Google Maps URL generation. |
-| `client.ResolveLocation(ctx, code)` | Gateway + Offline | Resolves building location with Level 3 live enrichment and offline fallback. |
+| `client.ResolveLocation(ctx, code)` | Gateway + Geocoding | Multi-stage pipeline: NIPOST Level 1–3 + Google Maps/Nominatim + auto disk caching. |
 | `client.Lookup(ctx, code, level)` | `GET /v1/lookup` | Graded postcode lookup (Levels 1–3 cumulative per official spec). |
 | `client.Autocomplete(ctx, q)` | `GET /v1/search/autocomplete` | Segment-aware suggestions for partial input. |
-| `client.Nearby(ctx, params)` | `GET /v1/search/nearby` | Units within a radius (default 300m) of a coordinate. |
+| `client.Nearby(ctx, params)` | `GET /v1/search/nearby` | Units within a radius (default 300m) of coordinates or reference postcode. |
+| `client.NearbyPostcode(ctx, code, radiusM)` | Convenience Helper | Nearby search surrounding a reference postcode's centroid. |
 | `client.Reverse(ctx, params)` | `GET /v1/search/reverse` | Snaps coordinate to nearest active unit (default 25m). |
+| `client.ReverseCoordinates(ctx, lat, lng, maxDist)` | Convenience Helper | Snaps lat/lng directly to nearest active unit. |
 | `client.Assemble(ctx, segs)` | `POST /v1/assembly/assemble` | Assembles 5 segments into canonical format. |
 | `client.Disassemble(ctx, code)` | `GET /v1/assembly/disassemble` | Decomposes code into its 5 administrative segments. |
 

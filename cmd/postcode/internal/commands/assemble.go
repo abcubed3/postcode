@@ -53,17 +53,10 @@ Operates offline with zero allocations by default, or calls the NIPOST gateway w
 				})
 			}
 
-			// Offline zero-alloc assembly
-			rawStr := fmt.Sprintf("%s%s%s%s%s", state, lga, district, area, unit)
-			p, err := postcode.Parse(rawStr)
+			// Offline assembly (with automatic single-digit zero filling and case normalization)
+			res, err := postcode.AssembleSegments(segs)
 			if err != nil {
 				return fmt.Errorf("assembly failed: %w", err)
-			}
-
-			res := postcode.AssembledPostcode{
-				Postcode: p.Formatted(),
-				Display:  p.String(),
-				Compact:  p.Raw(),
 			}
 
 			return PrintOutput(cmd, v, res, func(w io.Writer) error {

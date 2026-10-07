@@ -39,9 +39,15 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	// Persistent flags (inherited by all subcommands)
 	rootCmd.PersistentFlags().String("config", "", "config file path (default is $HOME/.postcode.yaml or ./.postcode.yaml)")
 	rootCmd.PersistentFlags().StringP("output", "o", "text", "output format: text, json, yaml, csv")
-	rootCmd.PersistentFlags().StringP("apikey", "k", "", "NIPOST postcode API key (env: POSTCODE_API_KEY)")
-	rootCmd.PersistentFlags().String("api", "", "NIPOST postcode api base url (env: POSTCODE_BASE_URL)")
+	rootCmd.PersistentFlags().StringP("api-key", "k", "", "NIPOST postcode API key (env: POSTCODE_API_KEY)")
+	rootCmd.PersistentFlags().String("base-url", "", "NIPOST postcode API base URL (env: POSTCODE_BASE_URL)")
+	rootCmd.PersistentFlags().String("apikey", "", "Alias for --api-key")
+	rootCmd.PersistentFlags().String("api", "", "Alias for --base-url")
+	_ = rootCmd.PersistentFlags().MarkHidden("apikey")
 	rootCmd.PersistentFlags().DurationP("timeout", "t", 10*time.Second, "HTTP request timeout")
+	rootCmd.PersistentFlags().Bool("offline", false, "run in offline mode using local reference data and cache (env: POSTCODE_OFFLINE)")
+	rootCmd.PersistentFlags().String("google-maps-api-key", "", "Google Maps Geocoding API key for precise geocoding (env: GOOGLE_MAPS_API_KEY)")
+
 
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"text", "json", "yaml", "csv"}, cobra.ShellCompDirectiveNoFileComp
@@ -89,6 +95,9 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	statusCmd := NewStatusCmd(v)
 	statusCmd.GroupID = "gateway"
 
+	referenceCmd := NewReferenceCmd(v)
+	referenceCmd.GroupID = "gateway"
+
 	batchCmd := NewBatchCmd(v)
 	batchCmd.GroupID = "ops"
 
@@ -107,6 +116,9 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	evalCmd := NewEvalCmd(v)
 	evalCmd.GroupID = "ops"
 
+	cacheCmd := NewCacheCmd(v)
+	cacheCmd.GroupID = "ops"
+
 	rootCmd.AddCommand(
 		validateCmd,
 		diagnoseCmd,
@@ -120,8 +132,10 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		autocompleteCmd,
 		nearbyCmd,
 		reverseCmd,
+		referenceCmd,
 		statusCmd,
 		batchCmd,
+		cacheCmd,
 		serveCmd,
 		mcpCmd,
 		evalCmd,
@@ -137,10 +151,24 @@ func initConfig(v *viper.Viper, cmd *cobra.Command) error {
 	v.AutomaticEnv()
 
 	// Register known keys so AutomaticEnv is picked up during lookup
+	v.SetDefault("api-key", "")
 	v.SetDefault("apikey", "")
+	v.SetDefault("base-url", "")
+	v.SetDefault("api", "")
 	v.SetDefault("url", "")
 	v.SetDefault("output", "text")
 	v.SetDefault("timeout", 10*time.Second)
+	v.SetDefault("online", false)
+	v.SetDefault("offline", false)
+
+	_ = v.BindEnv("api-key", "POSTCODE_API_KEY")
+	_ = v.BindEnv("apikey", "POSTCODE_API_KEY")
+	_ = v.BindEnv("base-url", "POSTCODE_BASE_URL")
+	_ = v.BindEnv("api", "POSTCODE_BASE_URL")
+	_ = v.BindEnv("url", "POSTCODE_BASE_URL")
+	_ = v.BindEnv("offline", "POSTCODE_OFFLINE")
+	_ = v.BindEnv("google-maps-api-key", "GOOGLE_MAPS_API_KEY")
+
 
 	cfgFile, _ := cmd.Flags().GetString("config")
 	if cfgFile != "" {

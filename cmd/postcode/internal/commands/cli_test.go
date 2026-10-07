@@ -451,3 +451,166 @@ func TestCLI_Eval(t *testing.T) {
 	})
 }
 
+func TestCLI_NearbyAndReverse_ArgumentValidation(t *testing.T) {
+	t.Run("nearby requires reference postcode or coordinates", func(t *testing.T) {
+		_, _, err := executeCmd([]string{"nearby"}, "")
+		if err == nil {
+			t.Fatal("expected error when neither postcode nor coordinates provided")
+		}
+		if !strings.Contains(err.Error(), "specify a reference postcode") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reverse requires coordinates", func(t *testing.T) {
+		_, _, err := executeCmd([]string{"reverse"}, "")
+		if err == nil {
+			t.Fatal("expected error when no coordinates provided")
+		}
+		if !strings.Contains(err.Error(), "specify coordinates via args") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("nearby rejects invalid postcode", func(t *testing.T) {
+		_, _, err := executeCmd([]string{"nearby", "INVALID-CODE"}, "")
+		if err == nil {
+			t.Fatal("expected error for invalid postcode")
+		}
+		if !strings.Contains(err.Error(), "invalid reference postcode") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestCLI_Cache(t *testing.T) {
+	t.Run("cache status displays path and count", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"cache", "status"}, "")
+		if err != nil {
+			t.Fatalf("cache status failed: %v", err)
+		}
+		if !strings.Contains(stdout, "Local Cache Path") || !strings.Contains(stdout, "Cached Buildings") {
+			t.Errorf("unexpected output: %s", stdout)
+		}
+	})
+
+	t.Run("cache list executes without error", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"cache", "list"}, "")
+		if err != nil {
+			t.Fatalf("cache list failed: %v", err)
+		}
+		if len(stdout) == 0 {
+			t.Error("expected non-empty output from cache list")
+		}
+	})
+}
+
+func TestCLI_Assemble_SingleDigitPadding(t *testing.T) {
+	// Tests official docs example: state: ek, lga: 1, district: a03, area: fk, unit: 1
+	stdout, _, err := executeCmd([]string{
+		"assemble",
+		"--state", "ek",
+		"--lga", "1",
+		"--district", "a03",
+		"--area", "fk",
+		"--unit", "1",
+	}, "")
+	if err != nil {
+		t.Fatalf("assemble with single-digit segments failed: %v", err)
+	}
+	if !strings.Contains(stdout, "EK-01-A03-FK-01") {
+		t.Errorf("expected EK-01-A03-FK-01 in output, got: %s", stdout)
+	}
+}
+
+func TestCLI_Reference(t *testing.T) {
+	t.Run("states offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"reference", "states", "--offline"}, "")
+		if err != nil {
+			t.Fatalf("reference states --offline failed: %v", err)
+		}
+		if !strings.Contains(stdout, "FC") || !strings.Contains(stdout, "Federal Capital Territory") {
+			t.Errorf("expected FC in output, got: %s", stdout)
+		}
+	})
+
+	t.Run("lgas offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"reference", "lgas", "--state", "FC", "--offline"}, "")
+		if err != nil {
+			t.Fatalf("reference lgas --state FC --offline failed: %v", err)
+		}
+		if !strings.Contains(stdout, "01") || !strings.Contains(stdout, "Abaji") {
+			t.Errorf("expected Abaji in output, got: %s", stdout)
+		}
+	})
+}
+
+func TestCLI_OfflineMode(t *testing.T) {
+	t.Run("lookup offline with centroid and known buildings", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "lookup", "EK-01-A03-FK-01"}, "")
+		if err != nil {
+			t.Fatalf("offline lookup failed: %v", err)
+		}
+		if !strings.Contains(stdout, "offline") {
+			t.Errorf("expected offline indication in output, got: %s", stdout)
+		}
+		if !strings.Contains(stdout, "Ekiti") {
+			t.Errorf("expected Ekiti state in output, got: %s", stdout)
+		}
+	})
+
+	t.Run("status offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "status"}, "")
+		if err != nil {
+			t.Fatalf("offline status failed: %v", err)
+		}
+		if !strings.Contains(stdout, "OFFLINE") {
+			t.Errorf("expected OFFLINE mode in status output, got: %s", stdout)
+		}
+	})
+
+	t.Run("nearby offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "nearby", "LA-08-A86-RG-01"}, "")
+		if err != nil {
+			t.Fatalf("offline nearby failed: %v", err)
+		}
+		if !strings.Contains(stdout, "Nearby units (offline)") {
+			t.Errorf("expected offline nearby header, got: %s", stdout)
+		}
+	})
+
+	t.Run("reverse offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "reverse", "--lat", "6.476111", "--lng", "3.633990"}, "")
+		if err != nil {
+			t.Fatalf("offline reverse failed: %v", err)
+		}
+		if !strings.Contains(stdout, "LA-08-A86-RG-01") {
+			t.Errorf("expected LA-08-A86-RG-01 in offline reverse output, got: %s", stdout)
+		}
+	})
+
+	t.Run("coords offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "coords", "EK-01-A03-FK-01"}, "")
+		if err != nil {
+			t.Fatalf("offline coords failed: %v", err)
+		}
+		if !strings.Contains(stdout, "7.621100") {
+			t.Errorf("expected 7.621100 in offline coords output, got: %s", stdout)
+		}
+	})
+
+	t.Run("map offline", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "map", "EK-01-A03-FK-01"}, "")
+		if err != nil {
+			t.Fatalf("offline map failed: %v", err)
+		}
+		if !strings.Contains(stdout, "https://www.google.com/maps") {
+			t.Errorf("expected google maps url in offline map output, got: %s", stdout)
+		}
+	})
+}
+
+
+
+
+

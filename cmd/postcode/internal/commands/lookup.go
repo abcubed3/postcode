@@ -56,8 +56,8 @@ will gracefully enrich the response using local reference data.`,
 				return err
 			}
 
-			if level < 1 || level > 3 {
-				return fmt.Errorf("invalid lookup level %d: choose 1 (validity), 2 (address), or 3 (building use)", level)
+			if level < 1 || level > 5 {
+				return fmt.Errorf("invalid lookup level %d: choose 1 (validity), 2 (address), 3 (building use), 4 (building metadata), or 5 (geometry)", level)
 			}
 
 			res := LookupResult{
@@ -65,7 +65,47 @@ will gracefully enrich the response using local reference data.`,
 				Results: make([]LookupOutputItem, 0, len(inputs)),
 			}
 
+			offlineMode := isOffline(v, cmd)
+
 			for _, raw := range inputs {
+				if offlineMode {
+					p, parseErr := postcode.Parse(raw)
+					if parseErr != nil {
+						res.Results = append(res.Results, LookupOutputItem{
+							Input: raw,
+							Valid: false,
+							Error: parseErr.Error(),
+						})
+						continue
+					}
+					loc := p.Location()
+					res.Results = append(res.Results, LookupOutputItem{
+						Input:    raw,
+						Postcode: p.Formatted(),
+						Valid:    true,
+						Level:    level,
+						Source:   "offline",
+						AdministrativeAddress: &postcode.AdministrativeAddress{
+							State:     p.State(),
+							StateName: loc.StateName,
+							LGA:       p.LGA(),
+							LGAName:   loc.LGAName,
+							District:  p.District(),
+							Area:      p.Area(),
+							Unit:      p.BuildingUnit(),
+							Zone:      loc.Zone,
+						},
+						RecentHouseAddress: &postcode.RecentHouseAddress{
+							Address: loc.Address,
+						},
+						PointGeometry: &postcode.PointGeometry{
+							Type:        "Point",
+							Coordinates: []float64{loc.Longitude, loc.Latitude},
+						},
+					})
+					continue
+				}
+
 				resp, lookupErr := client.Lookup(cmd.Context(), raw, postcode.LookupLevel(level))
 				if lookupErr != nil {
 					if offlineFallback {
@@ -161,8 +201,14 @@ will gracefully enrich the response using local reference data.`,
 							_, _ = fmt.Fprintf(w, "Zone:          %s\n", aa.Zone)
 						}
 					}
-					if r.RecentHouseAddress != nil && r.RecentHouseAddress.Address != "" {
-						_, _ = fmt.Fprintf(w, "Address:       %s\n", r.RecentHouseAddress.Address)
+					if r.RecentHouseAddress != nil {
+						addr := r.RecentHouseAddress.Address
+						if addr == "" {
+							addr = r.RecentHouseAddress.Recent
+						}
+						if addr != "" {
+							_, _ = fmt.Fprintf(w, "Address:       %s\n", addr)
+						}
 					}
 					if r.BuildingUseStatus != "" {
 						_, _ = fmt.Fprintf(w, "Building Use:  %s\n", r.BuildingUseStatus)
@@ -176,7 +222,7 @@ will gracefully enrich the response using local reference data.`,
 		},
 	}
 
-	cmd.Flags().IntVarP(&level, "level", "l", 1, "lookup grade depth: 1 (validity), 2 (address), 3 (building use)")
+	cmd.Flags().IntVarP(&level, "level", "l", 1, "lookup grade depth (1-5; commercial keys support 1-3, 4-5 are enterprise/restricted)")
 	cmd.Flags().BoolVar(&offlineFallback, "offline-fallback", true, "fall back to local reference data if gateway is unreachable")
 
 	return cmd

@@ -113,24 +113,27 @@ func DefaultAgentTools() []ToolDef {
 		},
 		{
 			Name:        "search_nearby",
-			Description: "Searches for active postcode units within a radius (default 300m) of geographic coordinates.",
+			Description: "Searches for active postcode units within a radius (default 300m) of geographic coordinates or reference postcode.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"code": map[string]any{
+						"type":        "string",
+						"description": "Optional reference Nigerian postcode (e.g. 'LA-08-A86-RG-01'). If provided, centroid coordinates are resolved automatically.",
+					},
 					"latitude": map[string]any{
 						"type":        "number",
-						"description": "Geographic latitude in Nigeria.",
+						"description": "Optional geographic latitude in Nigeria.",
 					},
 					"longitude": map[string]any{
 						"type":        "number",
-						"description": "Geographic longitude in Nigeria.",
+						"description": "Optional geographic longitude in Nigeria.",
 					},
 					"radius_m": map[string]any{
 						"type":        "number",
 						"description": "Search radius in meters (default 300, max 300).",
 					},
 				},
-				"required": []string{"latitude", "longitude"},
 			},
 		},
 		{
@@ -282,6 +285,8 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 			return nil, fmt.Errorf("gateway client is required for nearby search")
 		}
 		var args struct {
+			Code      string  `json:"code"`
+			Postcode  string  `json:"postcode"`
 			Latitude  float64 `json:"latitude"`
 			Longitude float64 `json:"longitude"`
 			RadiusM   float64 `json:"radius_m"`
@@ -289,9 +294,28 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 		if err := json.Unmarshal(argsJSON, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
+		targetCode := args.Code
+		if targetCode == "" {
+			targetCode = args.Postcode
+		}
+		lat := args.Latitude
+		lng := args.Longitude
+		if lat == 0 && lng == 0 && targetCode != "" {
+			p, err := Parse(targetCode)
+			if err != nil {
+				return nil, fmt.Errorf("invalid reference postcode %q: %w", targetCode, err)
+			}
+			loc := p.Location()
+			lat = loc.Latitude
+			lng = loc.Longitude
+		}
+		if lat == 0 && lng == 0 {
+			return nil, fmt.Errorf("either reference postcode ('code') or 'latitude' and 'longitude' must be provided")
+		}
 		return d.client.Nearby(ctx, NearbyParams{
-			Latitude:  args.Latitude,
-			Longitude: args.Longitude,
+			Postcode:  targetCode,
+			Latitude:  lat,
+			Longitude: lng,
 			RadiusM:   args.RadiusM,
 		})
 

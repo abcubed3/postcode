@@ -162,6 +162,54 @@ func TestClient_Assemble(t *testing.T) {
 	}
 }
 
+func TestClient_Nearby(t *testing.T) {
+	// Test both raw array payload (live NIPOST) and reference postcode resolution
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/lookup" {
+			_, _ = w.Write([]byte(`{"data":{"postcode":"LA-08-A86-RG-01","valid":true,"point_geometry":{"type":"Point","coordinates":[3.633990,6.476111]}}}`))
+			return
+		}
+		if r.URL.Path != "/v1/search/nearby" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("lat") == "" || r.URL.Query().Get("lng") == "" {
+			t.Errorf("missing lat or lng query param")
+		}
+
+		// Return live NIPOST format: {"data": [ ... ]}
+		_, _ = w.Write([]byte(`{"data":[{"postcode":"LA-11-A12-GN-01","display":"LA 11 A12 GN 01","distance_m":9.2}]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	// 1. By coordinates
+	res, err := client.Nearby(context.Background(), NearbyParams{
+		Latitude:  6.6018,
+		Longitude: 3.3515,
+		RadiusM:   300,
+	})
+	if err != nil {
+		t.Fatalf("Nearby failed: %v", err)
+	}
+	if len(res.Results) != 1 || res.Results[0].Postcode != "LA-11-A12-GN-01" {
+		t.Errorf("unexpected nearby results: %+v", res)
+	}
+
+	// 2. By reference postcode (NearbyPostcode)
+	resCode, err := client.NearbyPostcode(context.Background(), "LA-08-A86-RG-01", 250)
+	if err != nil {
+		t.Fatalf("NearbyPostcode failed: %v", err)
+	}
+	if len(resCode.Results) != 1 {
+		t.Errorf("unexpected nearby postcode results count: %d", len(resCode.Results))
+	}
+}
+
 func TestClient_ErrorHandling(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -341,3 +389,161 @@ func TestClient_RateLimit429_ErrorDetails(t *testing.T) {
 		t.Errorf("apiErr.RateLimit = %+v, want Remaining=0", apiErr.RateLimit)
 	}
 }
+
+func TestClient_Health(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			t.Errorf("unexpected path: %s, want /healthz", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	if err := client.Health(context.Background()); err != nil {
+		t.Fatalf("client.Health() failed: %v", err)
+	}
+}
+
+func TestNormalizeAndAssembleSegments(t *testing.T) {
+	t.Parallel()
+
+	// Official documentation example: single-digit lga "1", unit "1", lowercase "ek", "a03", "fk"
+	raw := Segments{
+		State:    "ek",
+		LGA:      "1",
+		District: "a03",
+		Area:     "fk",
+		Unit:     "1",
+	}
+
+	norm := NormalizeSegments(raw)
+	if norm.State != "EK" || norm.LGA != "01" || norm.District != "A03" || norm.Area != "FK" || norm.Unit != "01" {
+		t.Fatalf("NormalizeSegments failed, got: %+v", norm)
+	}
+
+	assembled, err := AssembleSegments(raw)
+	if err != nil {
+		t.Fatalf("AssembleSegments failed: %v", err)
+	}
+	if assembled.Postcode != "EK-01-A03-FK-01" {
+		t.Errorf("assembled.Postcode = %q, want EK-01-A03-FK-01", assembled.Postcode)
+	}
+	if assembled.Display != "EK 01 A03 FK 01" {
+		t.Errorf("assembled.Display = %q, want EK 01 A03 FK 01", assembled.Display)
+	}
+	if assembled.Compact != "EK01A03FK01" {
+		t.Errorf("assembled.Compact = %q, want EK01A03FK01", assembled.Compact)
+	}
+}
+
+func TestClient_ReferenceCatalog(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/reference/states":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"states": []map[string]string{
+						{"code": "FC", "name": "Federal Capital Territory"},
+						{"code": "EK", "name": "Ekiti"},
+					},
+				},
+			})
+		case "/v1/reference/lgas":
+			if state := r.URL.Query().Get("state"); state != "FC" {
+				t.Errorf("expected state=FC, got %s", state)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"lgas": []map[string]string{
+						{"code": "01", "name": "Abaji"},
+					},
+				},
+			})
+		case "/v1/reference/districts":
+			if state := r.URL.Query().Get("state"); state != "FC" {
+				t.Errorf("expected state=FC, got %s", state)
+			}
+			if lga := r.URL.Query().Get("lga"); lga != "01" {
+				t.Errorf("expected lga=01, got %s", lga)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"districts": []map[string]string{
+						{"code": "A01"},
+					},
+				},
+			})
+		case "/v1/reference/areas":
+			if state := r.URL.Query().Get("state"); state != "FC" {
+				t.Errorf("expected state=FC, got %s", state)
+			}
+			if lga := r.URL.Query().Get("lga"); lga != "01" {
+				t.Errorf("expected lga=01, got %s", lga)
+			}
+			if dist := r.URL.Query().Get("district"); dist != "A01" {
+				t.Errorf("expected district=A01, got %s", dist)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"areas": []map[string]string{
+						{"code": "KP"},
+					},
+				},
+			})
+		default:
+			t.Errorf("unexpected endpoint: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	states, err := client.ReferenceStates(context.Background())
+	if err != nil {
+		t.Fatalf("ReferenceStates failed: %v", err)
+	}
+	if len(states) != 2 || states[0].Code != "FC" {
+		t.Errorf("unexpected states: %+v", states)
+	}
+
+	lgas, err := client.ReferenceLGAs(context.Background(), "fc")
+	if err != nil {
+		t.Fatalf("ReferenceLGAs failed: %v", err)
+	}
+	if len(lgas) != 1 || lgas[0].Code != "01" || lgas[0].Name != "Abaji" {
+		t.Errorf("unexpected LGAs: %+v", lgas)
+	}
+
+	districts, err := client.ReferenceDistricts(context.Background(), "fc", "1")
+	if err != nil {
+		t.Fatalf("ReferenceDistricts failed: %v", err)
+	}
+	if len(districts) != 1 || districts[0].Code != "A01" {
+		t.Errorf("unexpected districts: %+v", districts)
+	}
+
+	areas, err := client.ReferenceAreas(context.Background(), "fc", "1", "a01")
+	if err != nil {
+		t.Fatalf("ReferenceAreas failed: %v", err)
+	}
+	if len(areas) != 1 || areas[0].Code != "KP" {
+		t.Errorf("unexpected areas: %+v", areas)
+	}
+}
+

@@ -1,6 +1,9 @@
 package postcode
 
 import (
+	"cmp"
+	"slices"
+	"strings"
 	"sync"
 )
 
@@ -84,17 +87,68 @@ var knownLGAs = map[string]LGARecord{
 	"BA02": {StateCode: "BA", LGACode: "02", Name: "Bauchi", Latitude: 10.3158, Longitude: 9.8442},
 	"EB13": {StateCode: "EB", LGACode: "13", Name: "Abakaliki", Latitude: 6.3249, Longitude: 8.1137},
 	"EN05": {StateCode: "EN", LGACode: "05", Name: "Enugu North", Latitude: 6.4584, Longitude: 7.5464},
-	"FC03": {StateCode: "FC", LGACode: "03", Name: "Abuja Municipal", Latitude: 9.0579, Longitude: 7.4951},
+	// Federal Capital Territory (FCT) Area Councils
+	"FC01": {StateCode: "FC", LGACode: "01", Name: "Abaji", Latitude: 8.4721, Longitude: 6.9537},
 	"FC02": {StateCode: "FC", LGACode: "02", Name: "Bwari", Latitude: 9.1538, Longitude: 7.3220},
+	"FC03": {StateCode: "FC", LGACode: "03", Name: "Abuja Municipal", Latitude: 9.0579, Longitude: 7.4951},
+	"FC04": {StateCode: "FC", LGACode: "04", Name: "Gwagwalada", Latitude: 8.9431, Longitude: 7.0825},
+	"FC05": {StateCode: "FC", LGACode: "05", Name: "Kuje", Latitude: 8.8797, Longitude: 7.2306},
+	"FC06": {StateCode: "FC", LGACode: "06", Name: "Kwali", Latitude: 8.8842, Longitude: 7.0142},
 	"JI24": {StateCode: "JI", LGACode: "24", Name: "Dutse", Latitude: 11.7594, Longitude: 9.3389},
 	"KN31": {StateCode: "KN", LGACode: "31", Name: "Kano Municipal", Latitude: 12.0022, Longitude: 8.5920},
+	// All 20 Local Government Areas (LGAs) of Lagos State
+	"LA01": {StateCode: "LA", LGACode: "01", Name: "Agege", Latitude: 6.6180, Longitude: 3.3209},
+	"LA02": {StateCode: "LA", LGACode: "02", Name: "Ajeromi-Ifelodun", Latitude: 6.4554, Longitude: 3.3342},
+	"LA03": {StateCode: "LA", LGACode: "03", Name: "Alimosho", Latitude: 6.6091, Longitude: 3.2561},
+	"LA04": {StateCode: "LA", LGACode: "04", Name: "Amuwo-Odofin", Latitude: 6.4312, Longitude: 3.2842},
+	"LA05": {StateCode: "LA", LGACode: "05", Name: "Apapa", Latitude: 6.4484, Longitude: 3.3639},
+	"LA06": {StateCode: "LA", LGACode: "06", Name: "Badagry", Latitude: 6.4316, Longitude: 2.8876},
+	"LA07": {StateCode: "LA", LGACode: "07", Name: "Epe", Latitude: 6.5841, Longitude: 3.9834},
+	"LA08": {StateCode: "LA", LGACode: "08", Name: "Eti-Osa", Latitude: 6.4584, Longitude: 3.5684},
+	"LA09": {StateCode: "LA", LGACode: "09", Name: "Ibeju-Lekki", Latitude: 6.4862, Longitude: 3.8643},
+	"LA10": {StateCode: "LA", LGACode: "10", Name: "Ifako-Ijaiye", Latitude: 6.6713, Longitude: 3.3082},
 	"LA11": {StateCode: "LA", LGACode: "11", Name: "Ikeja", Latitude: 6.6018, Longitude: 3.3515},
+	"LA12": {StateCode: "LA", LGACode: "12", Name: "Ikorodu", Latitude: 6.6194, Longitude: 3.5105},
+	"LA13": {StateCode: "LA", LGACode: "13", Name: "Kosofe", Latitude: 6.5742, Longitude: 3.3941},
+	"LA14": {StateCode: "LA", LGACode: "14", Name: "Lagos Island", Latitude: 6.4549, Longitude: 3.4246},
+	"LA15": {StateCode: "LA", LGACode: "15", Name: "Lagos Mainland", Latitude: 6.4969, Longitude: 3.3776},
+	"LA16": {StateCode: "LA", LGACode: "16", Name: "Mushin", Latitude: 6.5298, Longitude: 3.3515},
+	"LA17": {StateCode: "LA", LGACode: "17", Name: "Ojo", Latitude: 6.4684, Longitude: 3.1924},
+	"LA18": {StateCode: "LA", LGACode: "18", Name: "Oshodi-Isolo", Latitude: 6.5388, Longitude: 3.3276},
+	"LA19": {StateCode: "LA", LGACode: "19", Name: "Shomolu", Latitude: 6.5385, Longitude: 3.3831},
+	"LA20": {StateCode: "LA", LGACode: "20", Name: "Surulere", Latitude: 6.4969, Longitude: 3.3565},
 	"NI09": {StateCode: "NI", LGACode: "09", Name: "Chanchaga", Latitude: 9.6139, Longitude: 6.5569},
 	"OG14": {StateCode: "OG", LGACode: "14", Name: "Abeokuta South", Latitude: 7.1475, Longitude: 3.3619},
 }
 
+// StateLGAs returns all reference LGAs for a given state code from the built-in reference dataset.
+func StateLGAs(state string) []NamedCode {
+	s := strings.ToUpper(strings.TrimSpace(state))
+	var res []NamedCode
+	for _, v := range knownLGAs {
+		if v.StateCode == s {
+			res = append(res, NamedCode{Code: v.LGACode, Name: v.Name})
+		}
+	}
+	slices.SortFunc(res, func(a, b NamedCode) int {
+		return cmp.Compare(a.Code, b.Code)
+	})
+	return res
+}
+
 // knownBuildings maps compact 11-char postcodes to building-level precision.
 var knownBuildings = map[string]BuildingRecord{
+	"LA08A86RG01": {
+		Postcode:  "LA-08-A86-RG-01",
+		Latitude:  6.476111,
+		Longitude: 3.633990,
+		Address:   "Eti-Osa, Lekki, Lagos",
+		StateCode: "LA",
+		StateName: "Lagos",
+		LGACode:   "08",
+		LGAName:   "Eti-Osa",
+		Zone:      "SOUTH WEST",
+	},
 	"EK01A03FK01": {
 		Postcode:  "EK-01-A03-FK-01",
 		Latitude:  7.6211,
@@ -356,12 +410,31 @@ func resolvePostcodeLocation(p Postcode) Location {
 		return Location{}
 	}
 
+	ensureCacheLoaded()
+
 	compact := p.Raw()
 	canonical := p.Formatted()
 	stateCode := p.State()
 	lgaCode := p.LGA()
 
-	// 1. Check custom buildings first
+	// 1. Check built-in official building registry first
+	if bRec, hasBuilding := knownBuildings[compact]; hasBuilding {
+		return Location{
+			Postcode:  canonical,
+			Compact:   compact,
+			Latitude:  bRec.Latitude,
+			Longitude: bRec.Longitude,
+			Precision: PrecisionBuilding,
+			Address:   bRec.Address,
+			StateCode: bRec.StateCode,
+			StateName: bRec.StateName,
+			LGACode:   bRec.LGACode,
+			LGAName:   bRec.LGAName,
+			Zone:      bRec.Zone,
+		}
+	}
+
+	// 2. Check custom and cached buildings
 	customMu.RLock()
 	cRec, hasCustom := customBuildings[compact]
 	customMu.RUnlock()
@@ -378,23 +451,6 @@ func resolvePostcodeLocation(p Postcode) Location {
 			LGACode:   cRec.LGACode,
 			LGAName:   cRec.LGAName,
 			Zone:      cRec.Zone,
-		}
-	}
-
-	// 2. Check built-in official building registry
-	if bRec, hasBuilding := knownBuildings[compact]; hasBuilding {
-		return Location{
-			Postcode:  canonical,
-			Compact:   compact,
-			Latitude:  bRec.Latitude,
-			Longitude: bRec.Longitude,
-			Precision: PrecisionBuilding,
-			Address:   bRec.Address,
-			StateCode: bRec.StateCode,
-			StateName: bRec.StateName,
-			LGACode:   bRec.LGACode,
-			LGAName:   bRec.LGAName,
-			Zone:      bRec.Zone,
 		}
 	}
 

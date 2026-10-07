@@ -183,3 +183,71 @@ func TestSimulator_DynamicLoading(t *testing.T) {
 		t.Errorf("expected multiple default records, got %d", len(TestPostcodes))
 	}
 }
+
+func TestSimulator_ReferenceAndHealthAndAssemble(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	defer srv.Close()
+
+	client, err := postcode.NewClient(postcode.WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	// 1. Health
+	if err := client.Health(context.Background()); err != nil {
+		t.Fatalf("Health check failed: %v", err)
+	}
+
+	// 2. Assemble with single-digit zero filling (official docs example)
+	assembled, err := client.Assemble(context.Background(), postcode.Segments{
+		State:    "ek",
+		LGA:      "1",
+		District: "a03",
+		Area:     "fk",
+		Unit:     "1",
+	})
+	if err != nil {
+		t.Fatalf("Assemble failed: %v", err)
+	}
+	if assembled.Postcode != "EK-01-A03-FK-01" {
+		t.Errorf("assembled.Postcode = %q, want EK-01-A03-FK-01", assembled.Postcode)
+	}
+
+	// 3. Reference States
+	states, err := client.ReferenceStates(context.Background())
+	if err != nil {
+		t.Fatalf("ReferenceStates failed: %v", err)
+	}
+	if len(states) != 37 {
+		t.Errorf("expected 37 states, got %d", len(states))
+	}
+
+	// 4. Reference LGAs
+	lgas, err := client.ReferenceLGAs(context.Background(), "LA")
+	if err != nil {
+		t.Fatalf("ReferenceLGAs failed: %v", err)
+	}
+	if len(lgas) == 0 {
+		t.Errorf("expected LGAs for LA, got 0")
+	}
+
+	// 5. Reference Districts
+	districts, err := client.ReferenceDistricts(context.Background(), "EK", "01")
+	if err != nil {
+		t.Fatalf("ReferenceDistricts failed: %v", err)
+	}
+	if len(districts) == 0 {
+		t.Errorf("expected districts for EK 01, got 0")
+	}
+
+	// 6. Reference Areas
+	areas, err := client.ReferenceAreas(context.Background(), "EK", "01", "A03")
+	if err != nil {
+		t.Fatalf("ReferenceAreas failed: %v", err)
+	}
+	if len(areas) == 0 {
+		t.Errorf("expected areas for EK 01 A03, got 0")
+	}
+}
+

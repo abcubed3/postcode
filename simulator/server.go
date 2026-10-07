@@ -1,6 +1,7 @@
 package simulator
 
 import (
+	"cmp"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -155,6 +157,18 @@ func NewHandler() http.Handler {
 
 	// GET /v1/assembly/disassemble?code=...
 	mux.HandleFunc("GET /v1/assembly/disassemble", handleDisassemble)
+
+	// GET /v1/reference/states
+	mux.HandleFunc("GET /v1/reference/states", handleReferenceStates)
+
+	// GET /v1/reference/lgas?state=...
+	mux.HandleFunc("GET /v1/reference/lgas", handleReferenceLGAs)
+
+	// GET /v1/reference/districts?state=...&lga=...
+	mux.HandleFunc("GET /v1/reference/districts", handleReferenceDistricts)
+
+	// GET /v1/reference/areas?state=...&lga=...&district=...
+	mux.HandleFunc("GET /v1/reference/areas", handleReferenceAreas)
 
 	// GET /healthz
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -451,8 +465,7 @@ func handleAssemble(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw := segs.State + segs.LGA + segs.District + segs.Area + segs.Unit
-	p, err := postcode.Parse(raw)
+	assembled, err := postcode.AssembleSegments(segs)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_segments", err.Error())
 		return
@@ -460,9 +473,9 @@ func handleAssemble(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"postcode": p.Formatted(),
-			"display":  p.String(),
-			"compact":  p.Raw(),
+			"postcode": assembled.Postcode,
+			"display":  assembled.Display,
+			"compact":  assembled.Compact,
 		},
 	})
 }
@@ -482,6 +495,132 @@ func handleDisassemble(w http.ResponseWriter, r *http.Request) {
 			"district": p.District(),
 			"area":     p.Area(),
 			"unit":     p.BuildingUnit(),
+		},
+	})
+}
+
+func handleReferenceStates(w http.ResponseWriter, r *http.Request) {
+	states := make([]postcode.NamedCode, 0, len(postcode.NigerianStates))
+	for code, rec := range postcode.NigerianStates {
+		states = append(states, postcode.NamedCode{
+			Code: code,
+			Name: rec.Name,
+		})
+	}
+	slices.SortFunc(states, func(a, b postcode.NamedCode) int {
+		return cmp.Compare(a.Code, b.Code)
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"states": states,
+		},
+	})
+}
+
+func handleReferenceLGAs(w http.ResponseWriter, r *http.Request) {
+	state := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("state")))
+	if state == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "missing required query parameter 'state'")
+		return
+	}
+	if _, ok := postcode.NigerianStates[state]; !ok {
+		writeError(w, http.StatusBadRequest, "unknown_state", "unknown state code "+state)
+		return
+	}
+
+	lgas := postcode.StateLGAs(state)
+	// If state has no hardcoded LGAs, extract any from TestPostcodes
+	if len(lgas) == 0 {
+		seen := make(map[string]string)
+		dbMu.RLock()
+		for _, rec := range TestPostcodes {
+			if rec.StateCode == state {
+				seen[rec.LGACode] = rec.LGAName
+			}
+		}
+		dbMu.RUnlock()
+		for code, name := range seen {
+			lgas = append(lgas, postcode.NamedCode{Code: code, Name: name})
+		}
+		slices.SortFunc(lgas, func(a, b postcode.NamedCode) int {
+			return cmp.Compare(a.Code, b.Code)
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"lgas": lgas,
+		},
+	})
+}
+
+func handleReferenceDistricts(w http.ResponseWriter, r *http.Request) {
+	state := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("state")))
+	lga := strings.TrimSpace(r.URL.Query().Get("lga"))
+	if len(lga) == 1 {
+		lga = "0" + lga
+	}
+	if state == "" || lga == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "missing required query parameters 'state' and 'lga'")
+		return
+	}
+
+	districtsMap := make(map[string]bool)
+	dbMu.RLock()
+	for _, rec := range TestPostcodes {
+		if rec.StateCode == state && rec.LGACode == lga {
+			districtsMap[rec.DistrictCode] = true
+		}
+	}
+	dbMu.RUnlock()
+
+	districts := make([]postcode.NamedCode, 0, len(districtsMap))
+	for code := range districtsMap {
+		districts = append(districts, postcode.NamedCode{Code: code})
+	}
+	slices.SortFunc(districts, func(a, b postcode.NamedCode) int {
+		return cmp.Compare(a.Code, b.Code)
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"districts": districts,
+		},
+	})
+}
+
+func handleReferenceAreas(w http.ResponseWriter, r *http.Request) {
+	state := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("state")))
+	lga := strings.TrimSpace(r.URL.Query().Get("lga"))
+	if len(lga) == 1 {
+		lga = "0" + lga
+	}
+	district := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("district")))
+	if state == "" || lga == "" || district == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "missing required query parameters 'state', 'lga', and 'district'")
+		return
+	}
+
+	areasMap := make(map[string]bool)
+	dbMu.RLock()
+	for _, rec := range TestPostcodes {
+		if rec.StateCode == state && rec.LGACode == lga && rec.DistrictCode == district {
+			areasMap[rec.AreaCode] = true
+		}
+	}
+	dbMu.RUnlock()
+
+	areas := make([]postcode.NamedCode, 0, len(areasMap))
+	for code := range areasMap {
+		areas = append(areas, postcode.NamedCode{Code: code})
+	}
+	slices.SortFunc(areas, func(a, b postcode.NamedCode) int {
+		return cmp.Compare(a.Code, b.Code)
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"areas": areas,
 		},
 	})
 }

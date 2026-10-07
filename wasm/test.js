@@ -107,6 +107,22 @@ async function run() {
   assert(synthetic[0].expected_state_code.length > 0);
   console.log('✔ generateSyntheticAddresses() passed');
 
+  // 12. Flexible Nearby & Reverse Geocoding API Signatures
+  // Verify argument validation on invalid input
+  await assert.rejects(
+    async () => { await postcode.nearby('INVALID_CODE'); },
+    /invalid reference postcode/
+  );
+  await assert.rejects(
+    async () => { await postcode.reverseGeocode(0, 0); },
+    /latitude and longitude coordinates are required/
+  );
+  await assert.rejects(
+    async () => { await postcode.reverseGeocode(); },
+    /parameters required/
+  );
+  console.log('✔ nearby() & reverseGeocode() flexible signature validation passed');
+
   console.log('\nAll parity verification tests passed successfully! 🎉');
 }
 

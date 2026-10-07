@@ -17,6 +17,18 @@ export interface ValidationResult {
   clean_length?: number;
 }
 
+export interface BuildingRecord {
+  postcode: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  state_code?: string;
+  state_name?: string;
+  lga_code?: string;
+  lga_name?: string;
+  zone?: string;
+}
+
 export interface Segments {
   valid?: boolean;
   error?: string;
@@ -156,12 +168,39 @@ export interface NearbyResponse {
   results: NearbyUnit[];
 }
 
+export interface NearbyOptions {
+  postcode?: string;
+  code?: string;
+  latitude?: number;
+  longitude?: number;
+  radius_m?: number;
+  radiusKm?: number;
+  radius_km?: number;
+  radius?: number;
+  limit?: number;
+}
+
 export interface ReverseResponse {
+  found: boolean;
+  coordinate?: [number, number];
+  unit?: NearbyUnit;
+  area?: string;
+  district?: string;
+  state?: string;
+  message?: string;
+  radius_m?: number;
+  latitude?: number;
+  longitude?: number;
+  postcode?: string;
+}
+
+export interface ReverseOptions {
   latitude: number;
   longitude: number;
-  postcode: string;
-  distance_m?: number;
-  location?: LocationResult;
+  max_distance_m?: number;
+  maxDistanceKm?: number;
+  maxDistanceM?: number;
+  max_dist?: number;
 }
 
 export interface AgentGuardMetrics {
@@ -212,6 +251,9 @@ export interface PostcodeEngine {
   assemble(segments: { state: string; lga: string; district: string; area: string; unit: string }): AssembledPostcode;
   disassemble(code: string): Segments;
   resolveLocation(code: string): LocationResult;
+  resolveLocationOnline(code: string): Promise<LocationResult>;
+  registerBuilding(record: BuildingRecord): boolean;
+  registerBuildings(records: BuildingRecord[]): number;
   listStates(): Record<string, StateRecord>;
 
   // --- 2. Configuration & State (Sync) ---
@@ -222,8 +264,9 @@ export interface PostcodeEngine {
   // --- 3. Live Gateway Operations (Async) ---
   lookup(code: string, level?: number): Promise<LookupResponse>;
   autocomplete(query: string): Promise<AutocompleteResponse>;
-  nearby(params: { latitude: number; longitude: number; radiusKm?: number; radius_m?: number; limit?: number }): Promise<NearbyResponse>;
-  reverseGeocode(params: { latitude: number; longitude: number; maxDistanceKm?: number; max_distance_m?: number }): Promise<ReverseResponse>;
+  nearby(postcodeOrParams: string | NearbyOptions, radiusM?: number): Promise<NearbyResponse>;
+  nearby(latitude: number, longitude: number, radiusM?: number): Promise<NearbyResponse>;
+  reverseGeocode(latOrParams: number | ReverseOptions, lng?: number, maxDistanceM?: number): Promise<ReverseResponse>;
 
   // --- 4. AI Agent Tooling & Guardrails ---
   getAgentTools(format?: 'openai' | 'anthropic' | 'gemini'): any[];

@@ -118,20 +118,29 @@ func (l Location) IsZero() bool {
 	return l == Location{}
 }
 
-// GoogleMapsURL returns a standard, universal Google Maps search URL with exact coordinates.
-// Format: https://www.google.com/maps/search/?api=1&query=lat,lng
+// GoogleMapsURL returns a standard, universal Google Maps search URL with exact coordinates
+// when Precision is Building, or a rich search query for coarse (LGA/State) locations.
+// Format: https://www.google.com/maps/search/?api=1&query=...
 func (l Location) GoogleMapsURL() string {
-	if l.Latitude == 0 && l.Longitude == 0 {
-		if l.Address != "" {
-			return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(l.Address))
-		}
-		if l.StateName != "" {
-			return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(l.SearchQuery()))
-		}
-		return ""
+	if l.Precision == PrecisionBuilding && (l.Latitude != 0 || l.Longitude != 0) {
+		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", l.Latitude, l.Longitude)
 	}
-	return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", l.Latitude, l.Longitude)
+	if l.Latitude != 0 || l.Longitude != 0 {
+		query := l.SearchQuery()
+		if query != "" && query != "Nigeria" {
+			return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(query))
+		}
+		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", l.Latitude, l.Longitude)
+	}
+	if l.Address != "" {
+		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(l.Address))
+	}
+	if l.StateName != "" {
+		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(l.SearchQuery()))
+	}
+	return ""
 }
+
 
 // GoogleMapsDirectionsURL returns a Google Maps navigation/directions URL to this location.
 // Format: https://www.google.com/maps/dir/?api=1&destination=lat,lng
@@ -189,6 +198,9 @@ func (l Location) SearchQuery() string {
 	if l.Address != "" {
 		parts = append(parts, l.Address)
 	} else {
+		if l.Postcode != "" {
+			parts = append(parts, l.Postcode)
+		}
 		if l.LGAName != "" {
 			parts = append(parts, l.LGAName)
 		}

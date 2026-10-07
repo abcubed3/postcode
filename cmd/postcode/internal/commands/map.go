@@ -69,12 +69,10 @@ Use --open to automatically launch the generated URL in your default system brow
 				return err
 			}
 
+			useOnline := !isOffline(v, cmd)
 			var client *postcode.Client
-			if online {
-				client, err = buildClient(v)
-				if err != nil {
-					return err
-				}
+			if useOnline {
+				client, _ = buildClient(v)
 			}
 
 			provider = strings.ToLower(provider)
@@ -89,14 +87,15 @@ Use --open to automatically launch the generated URL in your default system brow
 
 			for _, raw := range inputs {
 				var loc postcode.Location
-				if online {
+				resolved := false
+				if useOnline && client != nil {
 					resolvedLoc, resolveErr := client.ResolveLocation(cmd.Context(), raw)
-					if resolveErr == nil {
+					if resolveErr == nil && resolvedLoc != nil {
 						loc = *resolvedLoc
-					} else {
-						loc, _ = postcode.ResolveLocation(raw)
+						resolved = true
 					}
-				} else {
+				}
+				if !resolved {
 					var offErr error
 					loc, offErr = postcode.ResolveLocation(raw)
 					if offErr != nil {

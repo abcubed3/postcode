@@ -2,10 +2,13 @@ package postcode
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"unicode"
 )
 
 // LookupLevel specifies the depth of attributes returned by a lookup request.
@@ -143,11 +146,13 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 	return &res, nil
 }
 
-// ResolveLocation resolves an 11-character Nigerian postcode to its geographic Location
-// and Google Maps URL. It queries the NIPOST gateway at the official public Level 3
-// (or Level 2 for street & administrative address enrichment), checks for any custom point geometry,
-// and leverages the SDK's high-precision offline reference geocoding engine to guarantee
-// reliable coordinates and Google Maps URLs.
+// ResolveLocation resolves rich geographic metadata for a postcode.
+// It enriches the location via the NIPOST gateway at the highest available commercial
+// tier (Level 3 down to Level 1) if configured, adopting any explicit point geometry
+// returned by the gateway (e.g. enterprise accounts or simulator).
+// If point geometry is not present, it leverages the SDK's high-precision offline reference
+// geocoding engine (building benchmarks -> LGA centroid -> State centroid) to guarantee
+// reliable coordinates and mapping URLs.
 func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, error) {
 	p, err := Parse(code)
 	if err != nil {
@@ -156,10 +161,18 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 
 	loc := p.Location()
 
-	// 1. Query gateway at official maximum commercial Level 3 (or fallback to Level 2)
-	res, errLookup := c.Lookup(ctx, p.Formatted(), Level3)
-	if errLookup != nil {
-		res, errLookup = c.Lookup(ctx, p.Formatted(), Level2)
+	// 1. Query gateway at available commercial tiers (L3 down to L1 if authenticated, L1 only if unauthenticated)
+	var res *LookupResponse
+	var errLookup error
+	lookupTiers := []LookupLevel{Level3, Level2, Level1}
+	if c.apiKey == "" {
+		lookupTiers = []LookupLevel{Level1}
+	}
+	for _, lvl := range lookupTiers {
+		res, errLookup = c.Lookup(ctx, p.Formatted(), lvl)
+		if errLookup == nil && res != nil && res.Valid {
+			break
+		}
 	}
 
 	if errLookup != nil && c.agentGuard != nil && c.agentGuard.cfg.AutoFallbackToOffline {
@@ -167,7 +180,7 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 	}
 
 	if res != nil && res.Valid {
-		// If gateway provides explicit point geometry (enterprise/mock extension), adopt it
+		// If gateway provides explicit point geometry (granted enterprise keys or simulator), adopt it
 		if res.PointGeometry != nil && len(res.PointGeometry.Coordinates) >= 2 {
 			loc.Longitude = res.PointGeometry.Coordinates[0]
 			loc.Latitude = res.PointGeometry.Coordinates[1]
@@ -175,6 +188,8 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 		}
 		if res.RecentHouseAddress != nil && res.RecentHouseAddress.Address != "" {
 			loc.Address = res.RecentHouseAddress.Address
+		} else if res.RecentHouseAddress != nil && res.RecentHouseAddress.Recent != "" {
+			loc.Address = res.RecentHouseAddress.Recent
 		}
 		if res.AdministrativeAddress != nil {
 			if res.AdministrativeAddress.StateName != "" {
@@ -189,8 +204,50 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 		}
 	}
 
+	// 2. Multi-stage geocoding fallback: If gateway returned address metadata but no point coordinates,
+	// invoke the configured external geocoder (Google Maps -> Nominatim) to resolve exact building coordinates.
+	if loc.Precision != PrecisionBuilding && c.geocoder != nil {
+		queryParts := make([]string, 0, 5)
+		if loc.Address != "" {
+			queryParts = append(queryParts, loc.Address)
+		}
+		if loc.LGAName != "" && loc.LGAName != loc.Address {
+			queryParts = append(queryParts, loc.LGAName)
+		}
+		if loc.StateName != "" {
+			queryParts = append(queryParts, loc.StateName)
+		}
+		queryParts = append(queryParts, "Nigeria")
+		query := strings.Join(queryParts, ", ")
+
+		if len(queryParts) > 1 { // Has at least LGA/State and Nigeria
+			if geoLat, geoLng, geoErr := c.geocoder.Geocode(ctx, query); geoErr == nil && (geoLat != 0 || geoLng != 0) {
+				loc.Latitude = geoLat
+				loc.Longitude = geoLng
+				loc.Precision = PrecisionBuilding
+			}
+		}
+	}
+
+	// 3. Cache building-level resolution locally if exact building coordinates are present
+	if loc.Precision == PrecisionBuilding {
+		RegisterKnownBuilding(BuildingRecord{
+			Postcode:  loc.Postcode,
+			Latitude:  loc.Latitude,
+			Longitude: loc.Longitude,
+			Address:   loc.Address,
+			StateCode: loc.StateCode,
+			StateName: loc.StateName,
+			LGACode:   loc.LGACode,
+			LGAName:   loc.LGAName,
+			Zone:      loc.Zone,
+		})
+		_ = SaveDiskCache()
+	}
+
 	return &loc, nil
 }
+
 
 
 // AutocompleteSuggestion represents an individual suggestion returned by autocomplete.
@@ -219,11 +276,12 @@ func (c *Client) Autocomplete(ctx context.Context, query string) (*AutocompleteR
 	return &res, nil
 }
 
-// NearbyParams configures location search around a geographic coordinate.
+// NearbyParams configures location search around a geographic coordinate or reference postcode.
 type NearbyParams struct {
-	Latitude  float64
-	Longitude float64
-	RadiusM   float64 // Search radius in meters (default 300, max 300)
+	Postcode  string  `json:"postcode,omitempty"` // Optional reference postcode (auto-resolves centroid if coordinates are 0)
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	RadiusM   float64 `json:"radius_m"`           // Search radius in meters (default 300, max 300)
 }
 
 // NearbyUnit represents a building unit found near a coordinate.
@@ -242,8 +300,41 @@ type NearbyResponse struct {
 	Results []NearbyUnit `json:"results"`
 }
 
-// Nearby searches for active postcode units within a radius (default 300m) of a coordinate.
+// UnmarshalJSON supports both a direct slice of units `[...]` (returned by live NIPOST Gateway)
+// and an object payload `{"results": [...]}` (returned by simulators/proxies).
+func (r *NearbyResponse) UnmarshalJSON(data []byte) error {
+	var units []NearbyUnit
+	if err := json.Unmarshal(data, &units); err == nil {
+		r.Results = units
+		return nil
+	}
+
+	type alias NearbyResponse
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.Results = a.Results
+	return nil
+}
+
+// Nearby searches for active postcode units within a radius (default 300m) of a coordinate or reference postcode.
 func (c *Client) Nearby(ctx context.Context, params NearbyParams) (*NearbyResponse, error) {
+	if params.Latitude == 0 && params.Longitude == 0 && params.Postcode != "" {
+		if resolved, err := c.ResolveLocation(ctx, params.Postcode); err == nil && (resolved.Latitude != 0 || resolved.Longitude != 0) {
+			params.Latitude = resolved.Latitude
+			params.Longitude = resolved.Longitude
+		} else {
+			p, err := Parse(params.Postcode)
+			if err != nil {
+				return nil, fmt.Errorf("postcode: nearby invalid reference code: %w", err)
+			}
+			loc := p.Location()
+			params.Latitude = loc.Latitude
+			params.Longitude = loc.Longitude
+		}
+	}
+
 	q := make(url.Values, 3)
 	q.Set("lat", strconv.FormatFloat(params.Latitude, 'f', 6, 64))
 	q.Set("lng", strconv.FormatFloat(params.Longitude, 'f', 6, 64))
@@ -258,6 +349,14 @@ func (c *Client) Nearby(ctx context.Context, params NearbyParams) (*NearbyRespon
 	}
 
 	return &res, nil
+}
+
+// NearbyPostcode searches for active units within a radius of a reference postcode.
+func (c *Client) NearbyPostcode(ctx context.Context, code string, radiusM float64) (*NearbyResponse, error) {
+	return c.Nearby(ctx, NearbyParams{
+		Postcode: code,
+		RadiusM:  radiusM,
+	})
 }
 
 // ReverseParams configures reverse geocoding to snap coordinates to the nearest unit.
@@ -297,6 +396,15 @@ func (c *Client) Reverse(ctx context.Context, params ReverseParams) (*ReverseRes
 	return &res, nil
 }
 
+// ReverseCoordinates resolves geographic coordinates directly to the nearest active postcode unit.
+func (c *Client) ReverseCoordinates(ctx context.Context, lat, lng, maxDistanceM float64) (*ReverseResponse, error) {
+	return c.Reverse(ctx, ReverseParams{
+		Latitude:     lat,
+		Longitude:    lng,
+		MaxDistanceM: maxDistanceM,
+	})
+}
+
 // Segments represents the 5 administrative components of a Nigerian postcode.
 type Segments struct {
 	State    string `json:"state"`
@@ -314,10 +422,12 @@ type AssembledPostcode struct {
 }
 
 // Assemble builds canonical, display, and compact postcodes from individual segments.
+// Numeric segments are zero-filled (e.g. "1" -> "01") and alpha segments are converted to uppercase.
 func (c *Client) Assemble(ctx context.Context, segs Segments) (*AssembledPostcode, error) {
+	normalized := NormalizeSegments(segs)
 	var res AssembledPostcode
 	endpoint := []string{"v1", "assembly", "assemble"}
-	if err := c.execute(ctx, http.MethodPost, endpoint, nil, segs, &res); err != nil {
+	if err := c.execute(ctx, http.MethodPost, endpoint, nil, normalized, &res); err != nil {
 		return nil, err
 	}
 
@@ -336,4 +446,202 @@ func (c *Client) Disassemble(ctx context.Context, code string) (*Segments, error
 	}
 
 	return &res, nil
+}
+
+// Health checks the operational status of the gateway via GET /healthz.
+// Returns nil if the gateway responds with HTTP 200 OK.
+func (c *Client) Health(ctx context.Context) error {
+	endpoint := []string{"healthz"}
+	return c.execute(ctx, http.MethodGet, endpoint, nil, nil, nil)
+}
+
+// NormalizeSegments trims whitespace, converts alpha segments to uppercase,
+// and zero-fills single-digit numeric segments (e.g. "1" -> "01") according to official NIPOST rules.
+func NormalizeSegments(segs Segments) Segments {
+	s := strings.ToUpper(strings.TrimSpace(segs.State))
+	lga := strings.TrimSpace(segs.LGA)
+	if len(lga) == 1 && unicode.IsDigit(rune(lga[0])) {
+		lga = "0" + lga
+	}
+	dist := strings.ToUpper(strings.TrimSpace(segs.District))
+	area := strings.ToUpper(strings.TrimSpace(segs.Area))
+	unit := strings.TrimSpace(segs.Unit)
+	if len(unit) == 1 && unicode.IsDigit(rune(unit[0])) {
+		unit = "0" + unit
+	}
+	return Segments{
+		State:    s,
+		LGA:      lga,
+		District: dist,
+		Area:     area,
+		Unit:     unit,
+	}
+}
+
+// AssembleSegments validates and combines segments into an AssembledPostcode locally without network calls.
+func AssembleSegments(segs Segments) (AssembledPostcode, error) {
+	norm := NormalizeSegments(segs)
+	raw := norm.State + norm.LGA + norm.District + norm.Area + norm.Unit
+	p, err := Parse(raw)
+	if err != nil {
+		return AssembledPostcode{}, err
+	}
+	return AssembledPostcode{
+		Postcode: p.Formatted(),
+		Display:  p.String(),
+		Compact:  p.Raw(),
+	}, nil
+}
+
+// NamedCode represents a geographic administrative unit code with an optional human name.
+// For states and LGAs, Name is populated. For districts and areas, Name is omitted or empty.
+type NamedCode struct {
+	Code string `json:"code"`
+	Name string `json:"name,omitempty"`
+}
+
+type referenceStatesResponse struct {
+	States []NamedCode `json:"states"`
+}
+
+func (r *referenceStatesResponse) UnmarshalJSON(data []byte) error {
+	var list []NamedCode
+	if err := json.Unmarshal(data, &list); err == nil {
+		r.States = list
+		return nil
+	}
+	type alias referenceStatesResponse
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.States = a.States
+	return nil
+}
+
+type referenceLGAsResponse struct {
+	LGAs []NamedCode `json:"lgas"`
+}
+
+func (r *referenceLGAsResponse) UnmarshalJSON(data []byte) error {
+	var list []NamedCode
+	if err := json.Unmarshal(data, &list); err == nil {
+		r.LGAs = list
+		return nil
+	}
+	type alias referenceLGAsResponse
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.LGAs = a.LGAs
+	return nil
+}
+
+type referenceDistrictsResponse struct {
+	Districts []NamedCode `json:"districts"`
+}
+
+func (r *referenceDistrictsResponse) UnmarshalJSON(data []byte) error {
+	var list []NamedCode
+	if err := json.Unmarshal(data, &list); err == nil {
+		r.Districts = list
+		return nil
+	}
+	type alias referenceDistrictsResponse
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.Districts = a.Districts
+	return nil
+}
+
+type referenceAreasResponse struct {
+	Areas []NamedCode `json:"areas"`
+}
+
+func (r *referenceAreasResponse) UnmarshalJSON(data []byte) error {
+	var list []NamedCode
+	if err := json.Unmarshal(data, &list); err == nil {
+		r.Areas = list
+		return nil
+	}
+	type alias referenceAreasResponse
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.Areas = a.Areas
+	return nil
+}
+
+// ReferenceStates queries the official precomputed catalog for all 37 Nigerian states (GET /v1/reference/states).
+// This endpoint is free and consumes no credits.
+func (c *Client) ReferenceStates(ctx context.Context) ([]NamedCode, error) {
+	var res referenceStatesResponse
+	endpoint := []string{"v1", "reference", "states"}
+	if err := c.execute(ctx, http.MethodGet, endpoint, nil, nil, &res); err != nil {
+		return nil, err
+	}
+	return res.States, nil
+}
+
+// ReferenceLGAs queries all Local Government Areas for a given state code (GET /v1/reference/lgas?state=...).
+// This endpoint is free and consumes no credits.
+func (c *Client) ReferenceLGAs(ctx context.Context, state string) ([]NamedCode, error) {
+	if state == "" {
+		return nil, fmt.Errorf("postcode: state code cannot be empty")
+	}
+	q := make(url.Values, 1)
+	q.Set("state", strings.ToUpper(strings.TrimSpace(state)))
+	var res referenceLGAsResponse
+	endpoint := []string{"v1", "reference", "lgas"}
+	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+		return nil, err
+	}
+	return res.LGAs, nil
+}
+
+// ReferenceDistricts queries all postal district codes under a state and LGA (GET /v1/reference/districts?state=...&lga=...).
+// Districts have no human name (code only). Free, no credits consumed.
+func (c *Client) ReferenceDistricts(ctx context.Context, state, lga string) ([]NamedCode, error) {
+	if state == "" || lga == "" {
+		return nil, fmt.Errorf("postcode: state and lga parameters are required")
+	}
+	lgaNorm := strings.TrimSpace(lga)
+	if len(lgaNorm) == 1 && unicode.IsDigit(rune(lgaNorm[0])) {
+		lgaNorm = "0" + lgaNorm
+	}
+	q := make(url.Values, 2)
+	q.Set("state", strings.ToUpper(strings.TrimSpace(state)))
+	q.Set("lga", lgaNorm)
+	var res referenceDistrictsResponse
+	endpoint := []string{"v1", "reference", "districts"}
+	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+		return nil, err
+	}
+	return res.Districts, nil
+}
+
+// ReferenceAreas queries all postal area codes under a state, LGA, and district (GET /v1/reference/areas?state=...&lga=...&district=...).
+// Areas have no human name (code only). Free, no credits consumed.
+func (c *Client) ReferenceAreas(ctx context.Context, state, lga, district string) ([]NamedCode, error) {
+	if state == "" || lga == "" || district == "" {
+		return nil, fmt.Errorf("postcode: state, lga, and district parameters are required")
+	}
+	lgaNorm := strings.TrimSpace(lga)
+	if len(lgaNorm) == 1 && unicode.IsDigit(rune(lgaNorm[0])) {
+		lgaNorm = "0" + lgaNorm
+	}
+	q := make(url.Values, 3)
+	q.Set("state", strings.ToUpper(strings.TrimSpace(state)))
+	q.Set("lga", lgaNorm)
+	q.Set("district", strings.ToUpper(strings.TrimSpace(district)))
+	var res referenceAreasResponse
+	endpoint := []string{"v1", "reference", "areas"}
+	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+		return nil, err
+	}
+	return res.Areas, nil
 }

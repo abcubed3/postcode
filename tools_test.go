@@ -201,7 +201,7 @@ func TestAgentDispatcherOnline(t *testing.T) {
 		t.Errorf("expected found=true, got %+v", resRev)
 	}
 
-	// 4. search_nearby
+	// 4. search_nearby with coordinates
 	resNear, err := dispatcher.Dispatch(ctx, "search_nearby", []byte(`{"latitude":7.6211,"longitude":5.2215,"radius_m":300}`))
 	if err != nil {
 		t.Fatalf("search_nearby failed: %v", err)
@@ -209,6 +209,16 @@ func TestAgentDispatcherOnline(t *testing.T) {
 	near, ok := resNear.(*NearbyResponse)
 	if !ok || len(near.Results) == 0 {
 		t.Errorf("expected nearby results, got %+v", resNear)
+	}
+
+	// 5. search_nearby with reference postcode
+	resNearCode, err := dispatcher.Dispatch(ctx, "search_nearby", []byte(`{"code":"EK-01-A03-FK-01","radius_m":300}`))
+	if err != nil {
+		t.Fatalf("search_nearby with code failed: %v", err)
+	}
+	nearCode, ok := resNearCode.(*NearbyResponse)
+	if !ok || len(nearCode.Results) == 0 {
+		t.Errorf("expected nearby results with code, got %+v", resNearCode)
 	}
 }
 

@@ -37,31 +37,54 @@ and rate limit reset time.`,
 		Example: `  postcode status
   postcode status --base-url http://localhost:8080 -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if isOffline(v, cmd) {
+				count, cachePath := postcode.GetCacheStats()
+				offlineReport := map[string]any{
+					"mode":             "offline",
+					"cache_path":       cachePath,
+					"cached_buildings": count,
+				}
+				return PrintOutput(cmd, v, offlineReport, func(w io.Writer) error {
+					_, _ = fmt.Fprintln(w, "============================================================")
+					_, _ = fmt.Fprintln(w, "Mode:             OFFLINE (network calls disabled)")
+					_, _ = fmt.Fprintf(w, "Local Cache:      %s\n", cachePath)
+					_, _ = fmt.Fprintf(w, "Cached Buildings: %d entries\n", count)
+					_, _ = fmt.Fprintln(w, "============================================================")
+					return nil
+				})
+			}
+
 			client, err := buildClient(v)
 			if err != nil {
 				return err
 			}
 
 			start := time.Now()
-			// Probe gateway with a standard public L1 lookup of canonical test code
-			_, lookupErr := client.Lookup(cmd.Context(), "EK-01-A03-FK-01", postcode.Level1)
+			// Probe gateway operational health via GET /healthz
+			healthErr := client.Health(cmd.Context())
 			latency := time.Since(start)
 
-			apiKey := v.GetString("api-key")
-			baseURL := v.GetString("base-url")
+			apiKey := getAPIKey(v)
+			baseURL := getBaseURL(v)
 			if baseURL == "" {
 				baseURL = postcode.DefaultBaseURL
 			}
 
 			st := GatewayStatus{
 				BaseURL:   baseURL,
-				Healthy:   lookupErr == nil,
+				Healthy:   healthErr == nil,
 				LatencyMs: float64(latency.Microseconds()) / 1000.0,
 				APIKeySet: apiKey != "",
 			}
 
-			if lookupErr != nil {
-				st.ServerError = lookupErr.Error()
+			if healthErr != nil {
+				st.ServerError = healthErr.Error()
+			} else if apiKey != "" {
+				// Probe authentication and retrieve rate quota headers.
+				// FC-01-A01-KP-27 is supported in both sandbox and production tiers.
+				if _, authErr := client.Lookup(cmd.Context(), "FC-01-A01-KP-27", postcode.Level1); authErr != nil {
+					st.ServerError = fmt.Sprintf("API key check failed: %v", authErr)
+				}
 			}
 
 			if rl := client.RateLimit(); rl != nil {

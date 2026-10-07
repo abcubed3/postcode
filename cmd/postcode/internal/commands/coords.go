@@ -63,12 +63,10 @@ With --online, it enriches coordinates via the NIPOST gateway.`,
 				return err
 			}
 
+			useOnline := !isOffline(v, cmd)
 			var client *postcode.Client
-			if online {
-				client, err = buildClient(v)
-				if err != nil {
-					return err
-				}
+			if useOnline {
+				client, _ = buildClient(v)
 			}
 
 			res := CoordsResult{
@@ -78,20 +76,17 @@ With --online, it enriches coordinates via the NIPOST gateway.`,
 
 			for _, raw := range inputs {
 				var loc postcode.Location
+				resolved := false
 
-				if online {
+				if useOnline && client != nil {
 					resolvedLoc, resolveErr := client.ResolveLocation(cmd.Context(), raw)
-					if resolveErr != nil {
-						// Fallback to offline resolution if online fails
-						var offErr error
-						loc, offErr = postcode.ResolveLocation(raw)
-						if offErr != nil {
-							return fmt.Errorf("resolving coords for %q: %w", raw, resolveErr)
-						}
-					} else {
+					if resolveErr == nil && resolvedLoc != nil {
 						loc = *resolvedLoc
+						resolved = true
 					}
-				} else {
+				}
+
+				if !resolved {
 					var offErr error
 					loc, offErr = postcode.ResolveLocation(raw)
 					if offErr != nil {

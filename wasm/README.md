@@ -76,9 +76,14 @@ async function main() {
   const suggestions = await postcode.autocomplete('Adetokunbo');
   console.log(suggestions.results);
 
-  // Search nearby units
-  const nearby = await postcode.nearby({ latitude: 6.6018, longitude: 3.3515, radiusKm: 2 });
+  // Search nearby units (by reference postcode or coordinates)
+  const nearby = await postcode.nearby('LA-08-A86-RG-01', 250);
+  // Or with coordinates directly: await postcode.nearby(6.6018, 3.3515, 250);
   console.log(nearby.results);
+
+  // Reverse geocode coordinates to postcode
+  const reverse = await postcode.reverseGeocode(6.6018, 3.3515, 25);
+  console.log(reverse.found, reverse.postcode);
 }
 
 main();
@@ -97,6 +102,9 @@ main();
 | `assemble(segments: Segments): AssembledPostcode` | Assembles 5 administrative segments into canonical, display, and compact codes. |
 | `disassemble(code: string): Segments` | Decomposes code into state, LGA, district, area, and building unit. |
 | `resolveLocation(code: string): LocationResult` | Resolves offline centroid coordinates, Google Maps, Apple Maps, and OSM links. |
+| `resolveLocationOnline(code: string): Promise<LocationResult>` | Fetches pinpoint building coordinates online via NIPOST cadastral discovery with local caching. |
+| `registerBuilding(record: BuildingRecord): boolean` | Registers custom building unit into local geocoding registry. |
+| `registerBuildings(records: BuildingRecord[]): number` | Bulk registers multiple building records for instant offline resolution. |
 | `listStates(): Record<string, StateRecord>` | Returns static dictionary of all 36 Nigerian States + FCT. |
 
 ### AI Agent Protocol & Benchmarking
@@ -112,14 +120,14 @@ main();
 |---|---|
 | `lookup(code: string, level?: number): Promise<LookupResponse>` | Queries NIPOST Gateway for Level 1, 2, or 3 commercial metadata. |
 | `autocomplete(query: string): Promise<AutocompleteResponse>` | Real-time address and street suggestions. |
-| `nearby(params: NearbyParams): Promise<NearbyResponse>` | Radius search for postcode units surrounding a coordinate. |
-| `reverseGeocode(params: ReverseParams): Promise<ReverseResponse>` | Reverse-resolves latitude and longitude into nearest valid postcode. |
+| `nearby(postcodeOrParams, radiusM?)` | Radius search using either a reference postcode or coordinate options. |
+| `reverseGeocode(latOrParams, lng?, maxDistanceM?)` | Reverse-resolves latitude and longitude into nearest valid postcode. |
 
 ## Configuring the NIPOST API Key
 
 ### 1. Offline vs. Online Boundary
 - **Offline Methods (No API Key Required)**: `validate()`, `validateBatch()`, `diagnose()`, `parse()`, `format()`, `assemble()`, `disassemble()`, `resolveLocation()`, `listStates()`, `getAgentTools()`, and `generateSyntheticAddresses()` run 100% offline in WebAssembly memory with zero network latency.
-- **Online Methods (API Key Configurable)**: `lookup()`, `autocomplete()`, `nearby()`, and `reverseGeocode()` connect to the live NIPOST Gateway (for commercial Level 2/3 street names, building use status, and GIS point geometry).
+- **Online Methods (API Key Configurable)**: `lookup()`, `autocomplete()`, `nearby()`, and `reverseGeocode()` connect to the live NIPOST Gateway (for commercial Level 2/3 street names and building use classification; note that commercial API keys are strictly capped at Level 3).
 
 ### 2. Ways to Set or Update the API Key
 

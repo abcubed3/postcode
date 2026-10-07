@@ -295,6 +295,124 @@ func jsResolveLocation(this js.Value, args []js.Value) any {
 	return jsLoc
 }
 
+func jsResolveLocationOnline(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return jsPromiseReject("code parameter is required")
+	}
+
+	code := args[0].String()
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+
+			loc, err := c.ResolveLocation(context.Background(), code)
+			if err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+
+			jsLoc := toJS(loc)
+			jsLoc.Set("state", loc.StateName)
+			jsLoc.Set("lga", loc.LGAName)
+			jsLoc.Set("google_maps_url", loc.GoogleMapsURL())
+			jsLoc.Set("google_maps_directions_url", loc.GoogleMapsDirectionsURL())
+			jsLoc.Set("apple_maps_url", loc.AppleMapsURL())
+			jsLoc.Set("osm_url", loc.OpenStreetMapURL())
+			jsLoc.Set("search_query", loc.SearchQuery())
+			resolve.Invoke(jsLoc)
+		}()
+		return nil
+	})
+
+	return promiseConstructor.New(handler)
+}
+
+func jsRegisterBuilding(this js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].Type() != js.TypeObject {
+		return false
+	}
+	obj := args[0]
+	rec := postcode.BuildingRecord{
+		Postcode:  obj.Get("postcode").String(),
+		Latitude:  obj.Get("latitude").Float(),
+		Longitude: obj.Get("longitude").Float(),
+	}
+	if obj.Get("address").Type() == js.TypeString {
+		rec.Address = obj.Get("address").String()
+	}
+	if obj.Get("state_code").Type() == js.TypeString {
+		rec.StateCode = obj.Get("state_code").String()
+	}
+	if obj.Get("state_name").Type() == js.TypeString {
+		rec.StateName = obj.Get("state_name").String()
+	}
+	if obj.Get("lga_code").Type() == js.TypeString {
+		rec.LGACode = obj.Get("lga_code").String()
+	}
+	if obj.Get("lga_name").Type() == js.TypeString {
+		rec.LGAName = obj.Get("lga_name").String()
+	}
+	if obj.Get("zone").Type() == js.TypeString {
+		rec.Zone = obj.Get("zone").String()
+	}
+
+	postcode.RegisterKnownBuilding(rec)
+	return true
+}
+
+func jsRegisterBuildings(this js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].Type() != js.TypeObject {
+		return 0
+	}
+	arr := args[0]
+	n := arr.Length()
+	count := 0
+	for i := 0; i < n; i++ {
+		item := arr.Index(i)
+		if item.Type() == js.TypeObject {
+			rec := postcode.BuildingRecord{
+				Postcode:  item.Get("postcode").String(),
+				Latitude:  item.Get("latitude").Float(),
+				Longitude: item.Get("longitude").Float(),
+			}
+			if item.Get("address").Type() == js.TypeString {
+				rec.Address = item.Get("address").String()
+			}
+			if item.Get("state_code").Type() == js.TypeString {
+				rec.StateCode = item.Get("state_code").String()
+			}
+			if item.Get("state_name").Type() == js.TypeString {
+				rec.StateName = item.Get("state_name").String()
+			}
+			if item.Get("lga_code").Type() == js.TypeString {
+				rec.LGACode = item.Get("lga_code").String()
+			}
+			if item.Get("lga_name").Type() == js.TypeString {
+				rec.LGAName = item.Get("lga_name").String()
+			}
+			if item.Get("zone").Type() == js.TypeString {
+				rec.Zone = item.Get("zone").String()
+			}
+			postcode.RegisterKnownBuilding(rec)
+			count++
+		}
+	}
+	return count
+}
+
 func jsListStates(this js.Value, args []js.Value) any {
 	obj := js.Global().Get("Object").New()
 	for code, rec := range postcode.NigerianStates {
@@ -427,27 +545,79 @@ func jsAutocomplete(this js.Value, args []js.Value) any {
 }
 
 func jsNearby(this js.Value, args []js.Value) any {
-	if len(args) == 0 || args[0].Type() != js.TypeObject {
-		return jsPromiseReject("parameters object required with latitude and longitude")
-	}
-	paramsObj := args[0]
-	lat := paramsObj.Get("latitude").Float()
-	lng := paramsObj.Get("longitude").Float()
-	radiusM := 5000.0 // default 5km
-	if paramsObj.Get("radius_m").Type() == js.TypeNumber {
-		radiusM = paramsObj.Get("radius_m").Float()
-	} else if paramsObj.Get("radiusKm").Type() == js.TypeNumber {
-		radiusM = paramsObj.Get("radiusKm").Float() * 1000.0
-	} else if paramsObj.Get("radius_km").Type() == js.TypeNumber {
-		radiusM = paramsObj.Get("radius_km").Float() * 1000.0
+	if len(args) == 0 {
+		return jsPromiseReject("parameters required: specify a postcode string or an options object with {postcode} or {latitude, longitude}")
 	}
 
+	var targetCode string
+	var lat, lng float64
+	radiusM := 300.0 // default 300m
 	limit := 10
-	if paramsObj.Get("limit").Type() == js.TypeNumber {
-		limit = paramsObj.Get("limit").Int()
+
+	if args[0].Type() == js.TypeString {
+		targetCode = args[0].String()
+		p, err := postcode.Parse(targetCode)
+		if err != nil {
+			return jsPromiseReject("invalid reference postcode: " + err.Error())
+		}
+		loc := p.Location()
+		lat = loc.Latitude
+		lng = loc.Longitude
+		if len(args) > 1 && args[1].Type() == js.TypeNumber {
+			radiusM = args[1].Float()
+		}
+	} else if len(args) >= 2 && args[0].Type() == js.TypeNumber && args[1].Type() == js.TypeNumber {
+		lat = args[0].Float()
+		lng = args[1].Float()
+		if len(args) > 2 && args[2].Type() == js.TypeNumber {
+			radiusM = args[2].Float()
+		}
+	} else if args[0].Type() == js.TypeObject {
+		paramsObj := args[0]
+		if paramsObj.Get("postcode").Type() == js.TypeString {
+			targetCode = paramsObj.Get("postcode").String()
+		} else if paramsObj.Get("code").Type() == js.TypeString {
+			targetCode = paramsObj.Get("code").String()
+		}
+
+		if paramsObj.Get("latitude").Type() == js.TypeNumber {
+			lat = paramsObj.Get("latitude").Float()
+		}
+		if paramsObj.Get("longitude").Type() == js.TypeNumber {
+			lng = paramsObj.Get("longitude").Float()
+		}
+
+		if lat == 0 && lng == 0 && targetCode != "" {
+			p, err := postcode.Parse(targetCode)
+			if err != nil {
+				return jsPromiseReject("invalid reference postcode: " + err.Error())
+			}
+			loc := p.Location()
+			lat = loc.Latitude
+			lng = loc.Longitude
+		}
+
+		if paramsObj.Get("radius_m").Type() == js.TypeNumber {
+			radiusM = paramsObj.Get("radius_m").Float()
+		} else if paramsObj.Get("radiusKm").Type() == js.TypeNumber {
+			radiusM = paramsObj.Get("radiusKm").Float() * 1000.0
+		} else if paramsObj.Get("radius_km").Type() == js.TypeNumber {
+			radiusM = paramsObj.Get("radius_km").Float() * 1000.0
+		} else if paramsObj.Get("radius").Type() == js.TypeNumber {
+			radiusM = paramsObj.Get("radius").Float()
+		}
+
+		if paramsObj.Get("limit").Type() == js.TypeNumber {
+			limit = paramsObj.Get("limit").Int()
+		}
+	}
+
+	if lat == 0 && lng == 0 {
+		return jsPromiseReject("specify a reference postcode or latitude/longitude coordinates")
 	}
 
 	params := postcode.NearbyParams{
+		Postcode:  targetCode,
 		Latitude:  lat,
 		Longitude: lng,
 		RadiusM:   radiusM,
@@ -484,17 +654,36 @@ func jsNearby(this js.Value, args []js.Value) any {
 }
 
 func jsReverseGeocode(this js.Value, args []js.Value) any {
-	if len(args) == 0 || args[0].Type() != js.TypeObject {
-		return jsPromiseReject("parameters object required with latitude and longitude")
+	if len(args) == 0 {
+		return jsPromiseReject("parameters required: specify lat and lng as numbers, or an options object with {latitude, longitude}")
 	}
-	paramsObj := args[0]
-	lat := paramsObj.Get("latitude").Float()
-	lng := paramsObj.Get("longitude").Float()
-	maxDist := 5000.0
-	if paramsObj.Get("max_distance_m").Type() == js.TypeNumber {
-		maxDist = paramsObj.Get("max_distance_m").Float()
-	} else if paramsObj.Get("maxDistanceKm").Type() == js.TypeNumber {
-		maxDist = paramsObj.Get("maxDistanceKm").Float() * 1000.0
+
+	var lat, lng float64
+	maxDist := 25.0
+
+	if len(args) >= 2 && args[0].Type() == js.TypeNumber && args[1].Type() == js.TypeNumber {
+		lat = args[0].Float()
+		lng = args[1].Float()
+		if len(args) > 2 && args[2].Type() == js.TypeNumber {
+			maxDist = args[2].Float()
+		}
+	} else if args[0].Type() == js.TypeObject {
+		paramsObj := args[0]
+		lat = paramsObj.Get("latitude").Float()
+		lng = paramsObj.Get("longitude").Float()
+		if paramsObj.Get("max_distance_m").Type() == js.TypeNumber {
+			maxDist = paramsObj.Get("max_distance_m").Float()
+		} else if paramsObj.Get("maxDistanceKm").Type() == js.TypeNumber {
+			maxDist = paramsObj.Get("maxDistanceKm").Float() * 1000.0
+		} else if paramsObj.Get("maxDistanceM").Type() == js.TypeNumber {
+			maxDist = paramsObj.Get("maxDistanceM").Float()
+		} else if paramsObj.Get("max_dist").Type() == js.TypeNumber {
+			maxDist = paramsObj.Get("max_dist").Float()
+		}
+	}
+
+	if lat == 0 && lng == 0 {
+		return jsPromiseReject("latitude and longitude coordinates are required")
 	}
 
 	params := postcode.ReverseParams{
@@ -635,6 +824,9 @@ func main() {
 	postcodeObj.Set("assemble", js.FuncOf(jsAssemble))
 	postcodeObj.Set("disassemble", js.FuncOf(jsDisassemble))
 	postcodeObj.Set("resolveLocation", js.FuncOf(jsResolveLocation))
+	postcodeObj.Set("resolveLocationOnline", js.FuncOf(jsResolveLocationOnline))
+	postcodeObj.Set("registerBuilding", js.FuncOf(jsRegisterBuilding))
+	postcodeObj.Set("registerBuildings", js.FuncOf(jsRegisterBuildings))
 	postcodeObj.Set("listStates", js.FuncOf(jsListStates))
 
 	// 2. Configuration & State (Sync)

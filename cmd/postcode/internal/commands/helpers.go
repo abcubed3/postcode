@@ -52,19 +52,40 @@ func readInputs(cmd *cobra.Command, args []string) ([]string, error) {
 	return inputs, nil
 }
 
+// getAPIKey retrieves the API key from viper across supported alias keys.
+func getAPIKey(v *viper.Viper) string {
+	if k := v.GetString("api-key"); k != "" {
+		return k
+	}
+	if k := v.GetString("apikey"); k != "" {
+		return k
+	}
+	return ""
+}
+
+// getBaseURL retrieves the base URL from viper across supported alias keys.
+func getBaseURL(v *viper.Viper) string {
+	if u := v.GetString("base-url"); u != "" {
+		return u
+	}
+	if u := v.GetString("api"); u != "" {
+		return u
+	}
+	if u := v.GetString("url"); u != "" {
+		return u
+	}
+	return ""
+}
+
 // buildClient instantiates a postcode.Client wired to the active Viper configuration.
 func buildClient(v *viper.Viper) (*postcode.Client, error) {
 	var opts []postcode.ClientOption
 
-	if apiKey := v.GetString("apikey"); apiKey != "" {
+	if apiKey := getAPIKey(v); apiKey != "" {
 		opts = append(opts, postcode.WithAPIKey(apiKey))
 	}
 
-	baseURL := v.GetString("api")
-	if baseURL == "" {
-		baseURL = v.GetString("url")
-	}
-	if baseURL != "" {
+	if baseURL := getBaseURL(v); baseURL != "" {
 		opts = append(opts, postcode.WithBaseURL(baseURL))
 	}
 
@@ -74,5 +95,31 @@ func buildClient(v *viper.Viper) (*postcode.Client, error) {
 		opts = append(opts, postcode.WithTimeout(10*time.Second))
 	}
 
+	if gKey := v.GetString("google-maps-api-key"); gKey != "" {
+		opts = append(opts, postcode.WithGoogleMapsKey(gKey))
+	}
+
 	return postcode.NewClient(opts...)
 }
+
+// isOffline checks whether offline mode is active.
+// Priority order:
+// 1. If command explicitly has a local --online flag set to true, online wins.
+// 2. If command explicitly has a local --offline flag set to true, offline wins.
+// 3. Otherwise, return the persistent global root --offline flag or POSTCODE_OFFLINE environment variable.
+func isOffline(v *viper.Viper, cmd *cobra.Command) bool {
+	if cmd != nil {
+		if flag := cmd.Flags().Lookup("online"); flag != nil && flag.Changed {
+			if online, err := cmd.Flags().GetBool("online"); err == nil && online {
+				return false
+			}
+		}
+		if flag := cmd.Flags().Lookup("offline"); flag != nil && flag.Changed {
+			if offline, err := cmd.Flags().GetBool("offline"); err == nil && offline {
+				return true
+			}
+		}
+	}
+	return v.GetBool("offline")
+}
+

@@ -18,8 +18,12 @@
     "geocoding",
     "wasm",
     "webassembly",
+    "javascript",
+    "typescript",
     "address",
-    "validation"
+    "validation",
+    "nodejs",
+    "web-browser"
   ],
   "author": "abcubed3",
   "license": "MIT",

@@ -77,6 +77,24 @@ func Parse(raw string) (Postcode, error) {
 	return p, nil
 }
 
+// Validate checks that raw is a grammatically valid Nigerian postcode
+// with a recognized Nigerian state or FCT code.
+func Validate(raw string) error {
+	p, err := Parse(raw)
+	if err != nil {
+		return err
+	}
+	if _, ok := NigerianStates[p.State()]; !ok {
+		return fmt.Errorf("%w: unknown state code %q (not in 36 States + FCT)", ErrInvalidFormat, p.State())
+	}
+	return nil
+}
+
+// IsValid reports whether raw is a valid Nigerian postcode with a recognized state code.
+func IsValid(raw string) bool {
+	return Validate(raw) == nil
+}
+
 // Safe segment accessors.
 func (p Postcode) State() string {
 	if p.IsZero() {

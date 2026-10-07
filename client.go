@@ -42,6 +42,7 @@ type Client struct {
 	rateLimit     atomic.Pointer[RateLimitInfo]
 	cache         Cache
 	agentGuard    *agentGuardState
+	geocoder      Geocoder
 }
 
 // NewClient instantiates a production-tuned HTTP client.
@@ -62,6 +63,10 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 
 	for _, opt := range opts {
 		opt(c)
+	}
+
+	if c.geocoder == nil {
+		c.geocoder = DefaultGeocoder("", c.httpClient)
 	}
 
 	// Wire transport stack: If a custom top-level transport was not set via WithTransport,
@@ -177,6 +182,20 @@ func WithCache(cache Cache) ClientOption {
 func WithDefaultCache() ClientOption {
 	return func(c *Client) {
 		c.cache = NewMemoryCache(1000, 30*time.Minute)
+	}
+}
+
+// WithGeocoder configures an external geocoder for resolving textual address locations into coordinates.
+func WithGeocoder(g Geocoder) ClientOption {
+	return func(c *Client) {
+		c.geocoder = g
+	}
+}
+
+// WithGoogleMapsKey configures Google Maps Geocoding API key for the client's geocoding chain.
+func WithGoogleMapsKey(key string) ClientOption {
+	return func(c *Client) {
+		c.geocoder = DefaultGeocoder(key, c.httpClient)
 	}
 }
 
