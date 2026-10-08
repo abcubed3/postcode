@@ -425,20 +425,64 @@ fmt.Printf("State Accuracy: %.2f%%, Postcode Accuracy: %.2f%%\n",
     result.StateAccuracy, result.PostcodeAccuracy)
 ```
 
-### 8. Universal Agent Skill Bundle (`skills/nipost-postcode`)
+### 8. Google Antigravity Plugin & Universal Agent Skill Bundle
 
-The repository includes a ready-to-publish Agent Skill bundle conforming to the universal Agent Skills specification (`SKILL.md`), packaged with `plugin.json` and `mcp_config.json`:
+This repository is packaged as an official **Google Antigravity Plugin** (`plugin.json`, `mcp_config.json`, `rules/`, `skills/`) adhering to the [Antigravity Plugin Guidelines](https://antigravity.google/docs/plugins/):
 
-```bash
-# Install as Antigravity plugin or import into agent harnesses
-agy plugin install github.com/abcubed3/postcode
+```text
+├── plugin.json                       # Official Antigravity manifest ($schema v1)
+├── mcp_config.json                   # Auto-discovered MCP server definition
+├── rules/
+│   └── nipost-postcode.md            # Active rules for Nigerian postcode operations
+└── skills/
+    └── nipost-postcode/
+        ├── SKILL.md                  # Domain workflow & self-healing procedures
+        ├── references/               # Deep-dive manuals (grammar, levels, recovery)
+        └── examples/                 # Runnable SDK, CLI, & MCP interaction patterns
 ```
 
-- **Domain Rules**: 11-character grammar constraints, illegal `00` guards, and 37 state code mappings.
-- **Cost-Aware Protocol**: Automated escalation from local $0 offline checks to Level 1 (Free) and Levels 2-3 (Commercial credits).
-- **Address Disambiguation SOP**: 5-step pipeline for parsing messy, landmark-heavy Nigerian addresses.
-- **Diagnostic Self-Healing**: Automated error interpretation and typo repair loops via `diagnose_postcode`.
-- **Reference Guides**: [Grammar](skills/nipost-postcode/references/grammar.md), [Lookup Levels](skills/nipost-postcode/references/lookup-levels.md), [Address Disambiguation](skills/nipost-postcode/references/address-disambiguation.md), and [Error Recovery](skills/nipost-postcode/references/error-recovery.md).
+#### Installing the Plugin
+
+You can install and activate the plugin across all Antigravity surfaces:
+
+**1. Via Antigravity CLI Shell (`agy plugin`)**:
+```bash
+# Install directly from the GitHub repository URL
+agy plugin install https://github.com/abcubed3/postcode
+
+# Or install from a local cloned directory
+agy plugin install ./
+
+# Verify installation
+agy plugin list
+```
+
+**2. Inside an Interactive Session (`/plugin`)**:
+Run `/plugin` in the chat prompt to open the **Plugins Manager**, or install directly via inline command:
+```text
+/plugin install https://github.com/abcubed3/postcode
+```
+
+**3. Workspace-Level (Antigravity IDE & 2.0)**:
+To enable for a specific repository, add the plugin to your workspace's `.agents/plugins/` directory:
+```bash
+mkdir -p .agents/plugins
+git clone https://github.com/abcubed3/postcode.git .agents/plugins/nipost-postcode
+```
+
+**4. Global Installation (All Projects & Workspaces)**:
+To enable across all projects on your workstation, clone into your global plugins directory:
+```bash
+mkdir -p ~/.gemini/config/plugins
+git clone https://github.com/abcubed3/postcode.git ~/.gemini/config/plugins/nipost-postcode
+```
+
+#### What the Plugin Provides
+- **Auto-Configured MCP Server**: Automatically connects your agent to `postcode mcp` using [`mcp_config.json`](mcp_config.json).
+- **Cost-Aware Escalation**: Enforces offline-first validation $\to$ Level 1 (Free) $\to$ Levels 2-3 (Commercial credits only when explicitly demanded).
+- **Informal Address Disambiguation**: 5-step SOP for extracting and synthesizing postcodes from descriptive landmarks and cross-streets.
+- **Diagnostic Self-Healing**: Automatically repairs typos and invalid segments via `postcode.Diagnose`.
+- **Reference Manuals**: [Grammar & States](skills/nipost-postcode/references/grammar.md), [Lookup Levels](skills/nipost-postcode/references/lookup-levels.md), [Address Disambiguation](skills/nipost-postcode/references/address-disambiguation.md), and [Error Recovery](skills/nipost-postcode/references/error-recovery.md).
 
 ## Benchmarks
 

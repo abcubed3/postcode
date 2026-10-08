@@ -227,3 +227,23 @@ tasks:
         git push origin $TAGS
         echo "==> Successfully tagged and pushed $TAG to origin!"
 
+  skill:install:
+    desc: Install NIPOST postcode skill to workspace (.agents/skills)
+    cmds:
+      - mkdir -p .agents/skills
+      - ln -snf ../../skills/nipost-postcode .agents/skills/nipost-postcode
+      - echo "==> NIPOST Postcode skill installed to .agents/skills/nipost-postcode"
+
+  plugin:install:
+    desc: Install NIPOST postcode plugin to workspace (.agents/plugins)
+    cmds:
+      - mkdir -p .agents/plugins
+      - ln -snf ../.. .agents/plugins/nipost-postcode
+      - echo "==> NIPOST Postcode plugin installed to .agents/plugins/nipost-postcode"
+
+  plugin:install:global:
+    desc: Install NIPOST postcode plugin globally (~/.gemini/config/plugins)
+    cmds:
+      - mkdir -p ~/.gemini/config/plugins
+      - ln -snf "$(pwd)" ~/.gemini/config/plugins/nipost-postcode
+      - echo "==> NIPOST Postcode plugin installed globally to ~/.gemini/config/plugins/nipost-postcode"
