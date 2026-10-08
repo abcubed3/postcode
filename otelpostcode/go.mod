@@ -3,7 +3,7 @@ module github.com/abcubed3/postcode/otelpostcode
 go 1.27.0
 
 require (
-	github.com/abcubed3/postcode v0.1.7
+	github.com/abcubed3/postcode v0.2.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0

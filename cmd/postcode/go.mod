@@ -3,7 +3,7 @@ module github.com/abcubed3/postcode/cmd/postcode
 go 1.27.0
 
 require (
-	github.com/abcubed3/postcode v0.1.7
+	github.com/abcubed3/postcode v0.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 )
