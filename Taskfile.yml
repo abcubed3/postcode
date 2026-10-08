@@ -170,3 +170,60 @@ tasks:
       - task: test:wasm
       - task: build:all
       - echo "==> All local CI checks passed!"
+
+  tag:
+    desc: Create and push synchronized git release tags across all modules
+    aliases: [release]
+    interactive: true
+    silent: true
+    cmds:
+      - |
+        if [ -n "{{.VERSION}}" ]; then
+          VER="{{.VERSION}}"
+        elif [ -n "{{.CLI_ARGS}}" ]; then
+          VER="{{.CLI_ARGS}}"
+        else
+          printf "Enter version number (e.g. 0.2.0 or v0.2.0): "
+          read -r VER
+        fi
+
+        VER=$(echo "$VER" | tr -d '[:space:]')
+        if [ -z "$VER" ]; then
+          echo "Error: Version number cannot be empty." >&2
+          exit 1
+        fi
+
+        case "$VER" in
+          v*) TAG="$VER" ;;
+          *)  TAG="v$VER" ;;
+        esac
+
+        if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+          echo "Error: '$VER' is not a valid semantic version (expected e.g. 0.2.0 or v0.2.0)." >&2
+          exit 1
+        fi
+
+        TAGS="$TAG"
+        if [ -d "cmd/postcode" ]; then
+          TAGS="$TAGS cmd/postcode/$TAG"
+        fi
+        if [ -d "otelpostcode" ]; then
+          TAGS="$TAGS otelpostcode/$TAG"
+        fi
+
+        for t in $TAGS; do
+          if git rev-parse -q --verify "refs/tags/$t" >/dev/null 2>&1; then
+            echo "Error: Git tag '$t' already exists locally." >&2
+            exit 1
+          fi
+        done
+
+        echo "==> Creating annotated git tag(s): $TAGS"
+        for t in $TAGS; do
+          git tag -a "$t" -m "Release $t"
+        done
+
+        echo "==> Pushing tags to origin..."
+        git push origin $TAGS
+        echo "==> Successfully tagged and pushed $TAG to origin!"
+

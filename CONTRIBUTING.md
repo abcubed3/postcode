@@ -150,6 +150,7 @@ We use `Taskfile.yml` to automate and standardize common developer commands. Run
 | `task coverage` | Generates and opens an HTML visual coverage report in your browser. |
 | `task clean` | Removes build binaries, coverage files, and compiled artifacts. |
 | `task ci` | Runs the complete local verification pipeline (`fmt`, `lint`, `test:race`, `test:wasm`, `build:all`). |
+| `task tag` | Prompts for version number, tags synchronized multi-module git releases, and pushes to origin. |
 
 ---
 
@@ -267,6 +268,11 @@ Because this repository contains multiple Go modules in one Git repository, rele
 
 When releasing a synchronized version across the repository:
 ```bash
+# Using Taskfile (prompts for version, or pass via CLI arguments)
+task tag
+# or: task tag -- 0.2.0
+
+# Or manually:
 VERSION="v0.2.0"
 git tag "${VERSION}"
 git tag "cmd/postcode/${VERSION}"
