@@ -19,3 +19,4 @@
 - [Diagnostics & Self-Correction](llms-full.txt#diagnostics-and-self-correction): Actionable segment-level error detection and suggestion engine.
 - [Core Go SDK Usage](llms-full.txt#core-sdk-reference): Client initialization, lookups, reverse geocoding, autocomplete.
 - [CLI Reference](llms-full.txt#cli-command-reference): Command syntax for `validate`, `diagnose`, `mcp`, `lookup`, `map`, and `serve`.
+- [Agent Skill Bundle (SKILL.md)](skills/nipost-postcode/SKILL.md): Standard operating procedures, quota escalation protocol, address disambiguation, and self-healing loops.

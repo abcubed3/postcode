@@ -921,13 +921,23 @@ func TestCLI_Update_WriteProtectedDirectory_Fallback(t *testing.T) {
 
 func TestCLI_Update_StaleBackupCleanup(t *testing.T) {
 	binaryContent := []byte("new-binary")
-	archiveBytes, err := createTestTarGz("postcode-darwin-arm64", binaryContent)
+	var archiveBytes []byte
+	var archiveName string
+	var err error
+
+	if runtime.GOOS == "windows" {
+		archiveName = fmt.Sprintf("postcode-windows-%s.zip", runtime.GOARCH)
+		archiveBytes, err = createTestZip(fmt.Sprintf("postcode-windows-%s.exe", runtime.GOARCH), binaryContent)
+	} else {
+		archiveName = fmt.Sprintf("postcode-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+		archiveBytes, err = createTestTarGz(fmt.Sprintf("postcode-%s-%s", runtime.GOOS, runtime.GOARCH), binaryContent)
+	}
 	if err != nil {
 		t.Fatalf("failed to create archive: %v", err)
 	}
 
 	checksum := computeSHA256(archiveBytes)
-	checksums := fmt.Sprintf("%s  postcode-darwin-arm64.tar.gz\n", checksum)
+	checksums := fmt.Sprintf("%s  %s\n", checksum, archiveName)
 
 	const mockBase = "http://mock-github-api.local"
 	mockURL := registerMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -936,12 +946,12 @@ func TestCLI_Update_StaleBackupCleanup(t *testing.T) {
 			rel := cmd.GitHubRelease{
 				TagName: "v0.8.0",
 				Assets: []cmd.GitHubAsset{
-					{Name: "postcode-darwin-arm64.tar.gz", BrowserDownloadURL: mockBase + "/download/archive.tar.gz"},
+					{Name: archiveName, BrowserDownloadURL: mockBase + "/download/" + archiveName},
 					{Name: "checksums.txt", BrowserDownloadURL: mockBase + "/download/checksums.txt"},
 				},
 			}
 			_ = json.NewEncoder(w).Encode(rel)
-		case "/download/archive.tar.gz":
+		case "/download/" + archiveName:
 			_, _ = w.Write(archiveBytes)
 		case "/download/checksums.txt":
 			_, _ = w.Write([]byte(checksums))

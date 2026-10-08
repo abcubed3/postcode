@@ -304,3 +304,17 @@ result := postcode.EvaluateAgent(dataset, postcode.BaselineExtract)
 // result: StateAccuracy, PostcodeAccuracy, ValidRate, AvgFormatScore, DurationMs
 ```
 
+---
+
+## 10. Agent Skill Bundle (`skills/nipost-postcode`)
+
+The repository includes a ready-to-publish Agent Skill bundle conforming to the universal Agent Skills specification (`SKILL.md`):
+- **Path**: `skills/nipost-postcode/SKILL.md`
+- **Plugin Manifest**: `plugin.json` (auto-detected by Antigravity, Claude Code, and Cursor)
+- **Playbooks Included**:
+  - Cost-aware escalation protocol (protecting Level 2/3 commercial quotas)
+  - 5-stage address disambiguation pipeline for informal Nigerian addresses
+  - Diagnostic self-healing loops (`diagnose_postcode`)
+  - Reference tables: `grammar.md`, `lookup-levels.md`, `address-disambiguation.md`, `error-recovery.md`
+  - Runnable code: `sdk_usage.go`, `cli_workflows.sh`, `mcp_agent_prompts.md`
+

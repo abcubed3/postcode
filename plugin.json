@@ -1,0 +1,19 @@
+{
+  "name": "nipost-postcode",
+  "version": "1.0.0",
+  "description": "NIPOST digital postcode engineering bundle: skills, MCP server integration, and workflows for Nigerian address geocoding and validation.",
+  "author": {
+    "name": "abcubed3",
+    "url": "https://abcubed3.dev"
+  },
+  "license": "MIT",
+  "keywords": [
+    "nipost",
+    "postcode",
+    "nigeria",
+    "geocoding",
+    "mcp",
+    "agent-skills",
+    "address-validation"
+  ]
+}

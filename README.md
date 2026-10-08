@@ -425,6 +425,21 @@ fmt.Printf("State Accuracy: %.2f%%, Postcode Accuracy: %.2f%%\n",
     result.StateAccuracy, result.PostcodeAccuracy)
 ```
 
+### 8. Universal Agent Skill Bundle (`skills/nipost-postcode`)
+
+The repository includes a ready-to-publish Agent Skill bundle conforming to the universal Agent Skills specification (`SKILL.md`), packaged with `plugin.json` and `mcp_config.json`:
+
+```bash
+# Install as Antigravity plugin or import into agent harnesses
+agy plugin install github.com/abcubed3/postcode
+```
+
+- **Domain Rules**: 11-character grammar constraints, illegal `00` guards, and 37 state code mappings.
+- **Cost-Aware Protocol**: Automated escalation from local $0 offline checks to Level 1 (Free) and Levels 2-3 (Commercial credits).
+- **Address Disambiguation SOP**: 5-step pipeline for parsing messy, landmark-heavy Nigerian addresses.
+- **Diagnostic Self-Healing**: Automated error interpretation and typo repair loops via `diagnose_postcode`.
+- **Reference Guides**: [Grammar](skills/nipost-postcode/references/grammar.md), [Lookup Levels](skills/nipost-postcode/references/lookup-levels.md), [Address Disambiguation](skills/nipost-postcode/references/address-disambiguation.md), and [Error Recovery](skills/nipost-postcode/references/error-recovery.md).
+
 ## Benchmarks
 
 Microbenchmarks measured on `darwin/arm64` (Apple M2 Max) using `go test -bench=. -benchmem`:

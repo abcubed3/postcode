@@ -26,8 +26,3 @@ coverage.html
 
 # Notes
 *.notes.txt
-
-# Agent Workspaces
-.agents/
-.agent/
-

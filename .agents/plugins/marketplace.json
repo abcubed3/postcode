@@ -1,0 +1,22 @@
+{
+  "name": "nipost-postcode",
+  "interface": {
+    "displayName": "NIPOST Postcode"
+  },
+  "plugins": [
+    {
+      "name": "nipost-postcode",
+      "version": "1.0.0",
+      "description": "NIPOST digital postcode engineering bundle: skills, MCP server integration, and workflows for Nigerian address geocoding and validation.",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Data & Geocoding"
+    }
+  ]
+}
