@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,8 +22,8 @@ func NewRootCmd() *cobra.Command {
 	v := viper.New()
 
 	rootCmd := &cobra.Command{
-		Use:           "postcode",
-		Short:         "CLI for Nigeria's National Digital Alphanumeric Postcode system",
+		Use:   "postcode",
+		Short: "CLI for Nigeria's National Digital Alphanumeric Postcode system",
 		Long: `postcode is a comprehensive command-line toolkit for parsing, validating,
 formatting, geocoding, and querying Nigeria's 11-character digital postcodes.
 
@@ -30,7 +31,7 @@ Built for high-performance offline address processing and full integration with
 the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:        fmt.Sprintf("%s (commit: %s, built: %s)", Version, GitCommit, BuildDate),
+		Version:       fmt.Sprintf("%s (commit: %s, built: %s)", Version, GitCommit, BuildDate),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return initConfig(v, cmd)
 		},
@@ -47,7 +48,8 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	rootCmd.PersistentFlags().DurationP("timeout", "t", 10*time.Second, "HTTP request timeout")
 	rootCmd.PersistentFlags().Bool("offline", false, "run in offline mode using local reference data and cache (env: POSTCODE_OFFLINE)")
 	rootCmd.PersistentFlags().String("google-maps-api-key", "", "Google Maps Geocoding API key for precise geocoding (env: GOOGLE_MAPS_API_KEY)")
-
+	rootCmd.PersistentFlags().String("google-maps-key", "", "Alias for --google-maps-api-key")
+	_ = rootCmd.PersistentFlags().MarkHidden("google-maps-key")
 
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"text", "json", "yaml", "csv"}, cobra.ShellCompDirectiveNoFileComp
@@ -119,6 +121,9 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	cacheCmd := NewCacheCmd(v)
 	cacheCmd.GroupID = "ops"
 
+	updateCmd := NewUpdateCmd(v)
+	updateCmd.GroupID = "ops"
+
 	rootCmd.AddCommand(
 		validateCmd,
 		diagnoseCmd,
@@ -140,6 +145,7 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		mcpCmd,
 		evalCmd,
 		versionCmd,
+		updateCmd,
 	)
 
 	return rootCmd
@@ -160,6 +166,10 @@ func initConfig(v *viper.Viper, cmd *cobra.Command) error {
 	v.SetDefault("timeout", 10*time.Second)
 	v.SetDefault("online", false)
 	v.SetDefault("offline", false)
+	v.SetDefault("google-maps-api-key", "")
+	v.SetDefault("google-maps-key", "")
+	v.SetDefault("github-api-url", "")
+	v.SetDefault("github-token", "")
 
 	_ = v.BindEnv("api-key", "POSTCODE_API_KEY")
 	_ = v.BindEnv("apikey", "POSTCODE_API_KEY")
@@ -168,7 +178,17 @@ func initConfig(v *viper.Viper, cmd *cobra.Command) error {
 	_ = v.BindEnv("url", "POSTCODE_BASE_URL")
 	_ = v.BindEnv("offline", "POSTCODE_OFFLINE")
 	_ = v.BindEnv("google-maps-api-key", "GOOGLE_MAPS_API_KEY")
+	_ = v.BindEnv("google-maps-key", "GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_KEY")
+	_ = v.BindEnv("github-api-url", "POSTCODE_GITHUB_API_URL")
+	_ = v.BindEnv("github-token", "GITHUB_TOKEN", "POSTCODE_GITHUB_TOKEN")
 
+	// Silently clean up stale in-place update backups (.old and .old.*) from previous Windows or Unix runs
+	if execPath, err := os.Executable(); err == nil {
+		cleanOldBackups(execPath)
+		if realPath, err := filepath.EvalSymlinks(execPath); err == nil && realPath != execPath {
+			cleanOldBackups(realPath)
+		}
+	}
 
 	cfgFile, _ := cmd.Flags().GetString("config")
 	if cfgFile != "" {

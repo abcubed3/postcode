@@ -327,7 +327,7 @@ postcode mcp
 
 ### 2. Native LLM Function Calling (`postcode.DefaultAgentTools`)
 
-Export standard JSON-Schema Draft-07 tool declarations compatible with Google Gemini, OpenAI, and Anthropic:
+Export standard JSON-Schema Draft-07 tool declarations compatible with Google Gemini, OpenAI, and Anthropic (covering validation, diagnostics, coordinates, reverse geocoding, nearby radius search, autocomplete, graded lookups, states and LGA reference catalogs, and segment-level assembly and disassembly):
 
 ```go
 // 1. Get standard tool definitions
@@ -440,3 +440,12 @@ BenchmarkGoogleMapsURL-12      3721462       325.20 ns/op        128 B/op       
 - **`postcode.Formatted`**: Formats canonical hyphenated postcodes (`AA-99-H77-BB-55`) with **`0 B/op` and `0 allocs/op`** in **~6 ns/op**.
 - **`postcode.ResolveLocation`**: Resolves building and administrative coordinates offline in **~115 ns/op**.
 - **`postcode.GoogleMapsURL`**: Formats and generates universal Google Maps search URLs in **~325 ns/op**.
+
+## Contributing
+
+Contributions, bug reports, and optimizations are welcome! Please read the **[Contributing Guide](CONTRIBUTING.md)** for details on repository architecture, zero-allocation requirements, development with **[Taskfile](Taskfile.yml)**, and pull request guidelines.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+

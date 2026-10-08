@@ -1,0 +1,172 @@
+version: '3'
+
+vars:
+  BIN_DIR: bin
+  BIN_NAME: postcode
+  WASM_OUT: wasm/postcode.wasm
+  COVERAGE_OUT: coverage.out
+  COVERAGE_HTML: coverage.html
+  SIMULATOR_PORT: 2340
+
+tasks:
+  default:
+    desc: List all available development tasks
+    cmds:
+      - task --list
+    silent: true
+
+  deps:
+    desc: Download and tidy Go and npm dependencies across all modules
+    aliases: [setup]
+    cmds:
+      - echo "==> Syncing Go workspace..."
+      - go work sync
+      - echo "==> Tidying root module..."
+      - go mod tidy
+      - echo "==> Tidying cmd/postcode module..."
+      - cd cmd/postcode && go mod tidy
+      - echo "==> Tidying otelpostcode module..."
+      - cd otelpostcode && go mod tidy
+      - echo "==> Verifying npm dependencies in wasm/..."
+      - cd wasm && npm install --silent
+      - echo "==> All dependencies are up to date."
+
+  fmt:
+    desc: Format all Go source files
+    aliases: [format]
+    cmds:
+      - echo "==> Formatting Go code with gofmt..."
+      - gofmt -s -w .
+      - echo "==> Go code formatted cleanly."
+
+  lint:
+    desc: Run go vet across all modules (matches CI checks)
+    cmds:
+      - echo "==> Running go vet across all modules..."
+      - go vet ./...
+      - go vet ./cmd/postcode/...
+      - go vet ./otelpostcode/...
+      - echo "==> All go vet checks passed."
+
+  lint:full:
+    desc: Run extended static analysis using golangci-lint
+    cmds:
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          echo "==> Running golangci-lint..."
+          golangci-lint run ./... ./cmd/postcode/... ./otelpostcode/...
+        else
+          echo "==> golangci-lint not installed. Install via: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+        fi
+
+  test:
+    desc: Run unit tests across all modules
+    cmds:
+      - go test -v ./... ./cmd/postcode/... ./otelpostcode/...
+
+  test:race:
+    desc: Run all tests with Go race detector and generate coverage profile
+    cmds:
+      - go test -race -v -coverprofile={{.COVERAGE_OUT}} -covermode=atomic ./... ./cmd/postcode/... ./otelpostcode/...
+
+  test:cli:
+    desc: Run CLI command suite tests
+    cmds:
+      - go test -v ./cmd/postcode/internal/commands/...
+
+  test:wasm:
+    desc: Compile and test WebAssembly module in Node.js
+    deps: [build:wasm]
+    cmds:
+      - echo "==> Running WASM Node.js smoke test..."
+      - |
+        node -e "
+          const { initPostcode } = require('./wasm/index.js');
+          initPostcode().then(p => {
+            const r = p.validate('EK 01 A03 FK 01');
+            if (!r.valid) throw new Error('WASM validation failed');
+            console.log('WASM Smoke Test Passed: state =', r.state_name);
+          });
+        "
+      - echo "==> Running WASM comprehensive test suite..."
+      - node wasm/test.js
+
+  test:all:
+    desc: Run race-detected unit tests, CLI tests, and WASM test suites
+    cmds:
+      - task: test:race
+      - task: test:wasm
+
+  bench:
+    desc: Run microbenchmarks with memory allocation profiling
+    cmds:
+      - go test -bench=. -benchmem -run=^$$ ./...
+
+  bench:hotpaths:
+    desc: Run microbenchmarks for hot path parsing, formatting, and geocoding
+    cmds:
+      - go test -bench='Benchmark(Parse|Formatted|ResolveLocation|GoogleMapsURL)' -benchmem -run=^$$ ./...
+
+  build:
+    desc: Build the postcode CLI binary for the local platform
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - |
+        VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
+        COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        LDFLAGS="-s -w -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.Version=${VERSION}' -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.GitCommit=${COMMIT}' -X 'github.com/abcubed3/postcode/cmd/postcode/internal/commands.BuildDate=${BUILD_DATE}'"
+        go build -trimpath -ldflags="${LDFLAGS}" -o {{.BIN_DIR}}/{{.BIN_NAME}} ./cmd/postcode
+      - echo "==> Binary built successfully at {{.BIN_DIR}}/{{.BIN_NAME}}"
+
+  build:wasm:
+    desc: Compile WebAssembly binary (wasm/postcode.wasm)
+    cmds:
+      - echo "==> Building WebAssembly binary..."
+      - GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o {{.WASM_OUT}} ./wasm
+      - cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm/wasm_exec.js 2>/dev/null || true
+      - echo "==> WebAssembly binary compiled at {{.WASM_OUT}}"
+
+  build:all:
+    desc: Build both CLI and WebAssembly targets
+    deps: [build, build:wasm]
+
+  install:
+    desc: Install postcode CLI binary into $GOPATH/bin
+    cmds:
+      - go install ./cmd/postcode
+      - echo "==> Installed postcode CLI to $(go env GOPATH)/bin/postcode"
+
+  sim:
+    desc: Start local in-memory NIPOST API mock simulator on port 2340
+    cmds:
+      - go run ./cmd/postcode serve --port {{.SIMULATOR_PORT}}
+
+  coverage:
+    desc: Generate and open HTML test coverage report
+    deps: [test:race]
+    cmds:
+      - go tool cover -html={{.COVERAGE_OUT}} -o {{.COVERAGE_HTML}}
+      - echo "==> Coverage report written to {{.COVERAGE_HTML}}"
+      - |
+        if command -v open >/dev/null 2>&1; then
+          open {{.COVERAGE_HTML}}
+        elif command -v xdg-open >/dev/null 2>&1; then
+          xdg-open {{.COVERAGE_HTML}}
+        fi
+
+  clean:
+    desc: Clean build artifacts, binaries, and test coverage files
+    cmds:
+      - rm -rf {{.BIN_DIR}} {{.COVERAGE_OUT}} {{.COVERAGE_HTML}} release-assets/ wasm/postcode.wasm
+      - echo "==> Build artifacts cleaned."
+
+  ci:
+    desc: Run the complete local CI suite (fmt, lint, test:race, test:wasm, build:all)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test:race
+      - task: test:wasm
+      - task: build:all
+      - echo "==> All local CI checks passed!"

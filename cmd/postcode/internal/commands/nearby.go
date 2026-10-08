@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-
 type NearbyOutputWrapper struct {
 	TargetPostcode string                `json:"target_postcode,omitempty"`
 	Latitude       float64               `json:"latitude"`
@@ -164,4 +163,3 @@ func runOfflineNearby(cmd *cobra.Command, v *viper.Viper, targetCode string, lat
 		return nil
 	})
 }
-

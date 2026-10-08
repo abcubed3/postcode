@@ -77,6 +77,23 @@ func getBaseURL(v *viper.Viper) string {
 	return ""
 }
 
+// getGoogleMapsKey retrieves the Google Maps API key across alias keys.
+func getGoogleMapsKey(v *viper.Viper) string {
+	if k := v.GetString("google-maps-api-key"); k != "" {
+		return k
+	}
+	if k := v.GetString("google-maps-key"); k != "" {
+		return k
+	}
+	if k := v.GetString("google_maps_api_key"); k != "" {
+		return k
+	}
+	if k := v.GetString("google_maps_key"); k != "" {
+		return k
+	}
+	return ""
+}
+
 // buildClient instantiates a postcode.Client wired to the active Viper configuration.
 func buildClient(v *viper.Viper) (*postcode.Client, error) {
 	var opts []postcode.ClientOption
@@ -95,7 +112,7 @@ func buildClient(v *viper.Viper) (*postcode.Client, error) {
 		opts = append(opts, postcode.WithTimeout(10*time.Second))
 	}
 
-	if gKey := v.GetString("google-maps-api-key"); gKey != "" {
+	if gKey := getGoogleMapsKey(v); gKey != "" {
 		opts = append(opts, postcode.WithGoogleMapsKey(gKey))
 	}
 
@@ -122,4 +139,3 @@ func isOffline(v *viper.Viper, cmd *cobra.Command) bool {
 	}
 	return v.GetBool("offline")
 }
-

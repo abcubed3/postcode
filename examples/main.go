@@ -2,7 +2,6 @@
 
 package main
 
-
 import (
 	"context"
 	"errors"
@@ -208,7 +207,7 @@ func main() {
 		postcode.WithBaseURL(srv.URL),
 		postcode.WithAPIKey("agent_session_key"),
 		postcode.WithAgentGuard(postcode.AgentGuardConfig{
-			MaxCommercialCallsPerRun: 1,    // Hard commercial ceiling
+			MaxCommercialCallsPerRun: 1, // Hard commercial ceiling
 			MaxTotalCallsPerRun:      5,
 			AutoDowngradeToLevel1:    true, // Transparently downgrade on quota exhaustion
 			AutoFallbackToOffline:    true,

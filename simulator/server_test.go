@@ -251,3 +251,109 @@ func TestSimulator_ReferenceAndHealthAndAssemble(t *testing.T) {
 	}
 }
 
+func TestSimulator_LookupLevels4And5(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	defer srv.Close()
+
+	authClient, err := postcode.NewClient(
+		postcode.WithBaseURL(srv.URL),
+		postcode.WithAPIKey("nipost_live_test_key"),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	// Level 4: other_building_info
+	l4Res, err := authClient.Lookup(context.Background(), "EK-01-A03-FK-01", postcode.Level4)
+	if err != nil {
+		t.Fatalf("Level 4 lookup failed: %v", err)
+	}
+	if l4Res.OtherBuildingInfo == nil {
+		t.Errorf("expected other_building_info in Level 4 lookup")
+	}
+	if l4Res.PointGeometry != nil {
+		t.Errorf("Level 4 should not include point geometry")
+	}
+
+	// Level 5: point_geometry
+	l5Res, err := authClient.Lookup(context.Background(), "EK-01-A03-FK-01", postcode.Level5)
+	if err != nil {
+		t.Fatalf("Level 5 lookup failed: %v", err)
+	}
+	if l5Res.PointGeometry == nil || l5Res.PointGeometry.Type != "Point" || len(l5Res.PointGeometry.Coordinates) != 2 {
+		t.Errorf("expected Point geometry with 2 coordinates, got %+v", l5Res.PointGeometry)
+	}
+}
+
+func TestSimulator_SearchAndDisassemble(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	defer srv.Close()
+
+	client, err := postcode.NewClient(
+		postcode.WithBaseURL(srv.URL),
+		postcode.WithAPIKey("test_key"),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// 1. Autocomplete
+	auto, err := client.Autocomplete(ctx, "EK-01")
+	if err != nil {
+		t.Fatalf("Autocomplete failed: %v", err)
+	}
+	if len(auto.Suggestions) == 0 {
+		t.Errorf("expected suggestions for 'EK-01', got 0")
+	}
+
+	// 2. Nearby with coordinates
+	nearCoords, err := client.Nearby(ctx, postcode.NearbyParams{
+		Latitude:  7.6211,
+		Longitude: 5.2215,
+		RadiusM:   300,
+	})
+	if err != nil {
+		t.Fatalf("Nearby with coordinates failed: %v", err)
+	}
+	if len(nearCoords.Results) == 0 {
+		t.Errorf("expected nearby results around Ekiti coordinates")
+	}
+
+	// 3. Nearby with reference postcode
+	nearCode, err := client.Nearby(ctx, postcode.NearbyParams{
+		Postcode: "EK-01-A03-FK-01",
+		RadiusM:  300,
+	})
+	if err != nil {
+		t.Fatalf("Nearby with postcode failed: %v", err)
+	}
+	if len(nearCode.Results) == 0 {
+		t.Errorf("expected nearby results around EK-01-A03-FK-01")
+	}
+
+	// 4. Reverse geocode
+	rev, err := client.Reverse(ctx, postcode.ReverseParams{
+		Latitude:     7.6211,
+		Longitude:    5.2215,
+		MaxDistanceM: 50,
+	})
+	if err != nil {
+		t.Fatalf("Reverse geocode failed: %v", err)
+	}
+	if !rev.Found || rev.Unit == nil || rev.Unit.Postcode != "EK-01-A03-FK-01" {
+		t.Errorf("expected reverse match EK-01-A03-FK-01, got %+v", rev)
+	}
+
+	// 5. Disassemble
+	segs, err := client.Disassemble(ctx, "EK-01-A03-FK-01")
+	if err != nil {
+		t.Fatalf("Disassemble failed: %v", err)
+	}
+	if segs.State != "EK" || segs.LGA != "01" || segs.District != "A03" || segs.Area != "FK" || segs.Unit != "01" {
+		t.Errorf("unexpected disassembled segments: %+v", segs)
+	}
+}

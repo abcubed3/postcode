@@ -3,8 +3,10 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync"
 	"syscall/js"
@@ -13,10 +15,11 @@ import (
 )
 
 var (
-	clientMu    sync.RWMutex
-	currentKey  string
-	currentBase string
-	client      *postcode.Client
+	clientMu             sync.RWMutex
+	currentKey           string
+	currentBase          string
+	currentGoogleMapsKey string
+	client               *postcode.Client
 )
 
 func getOrCreateClient() *postcode.Client {
@@ -29,6 +32,9 @@ func getOrCreateClient() *postcode.Client {
 		}
 		if currentBase != "" {
 			opts = append(opts, postcode.WithBaseURL(currentBase))
+		}
+		if currentGoogleMapsKey != "" {
+			opts = append(opts, postcode.WithGoogleMapsKey(currentGoogleMapsKey))
 		}
 		c, err := postcode.NewClient(opts...)
 		if err == nil {
@@ -45,6 +51,9 @@ func resetClientLocked() {
 	}
 	if currentBase != "" {
 		opts = append(opts, postcode.WithBaseURL(currentBase))
+	}
+	if currentGoogleMapsKey != "" {
+		opts = append(opts, postcode.WithGoogleMapsKey(currentGoogleMapsKey))
 	}
 	c, err := postcode.NewClient(opts...)
 	if err == nil {
@@ -220,14 +229,15 @@ func jsAssemble(this js.Value, args []js.Value) any {
 		return obj
 	}
 	obj := args[0]
-	state := obj.Get("state").String()
-	lga := obj.Get("lga").String()
-	district := obj.Get("district").String()
-	area := obj.Get("area").String()
-	unit := obj.Get("unit").String()
+	segs := postcode.Segments{
+		State:    obj.Get("state").String(),
+		LGA:      obj.Get("lga").String(),
+		District: obj.Get("district").String(),
+		Area:     obj.Get("area").String(),
+		Unit:     obj.Get("unit").String(),
+	}
 
-	raw := state + lga + district + area + unit
-	p, err := postcode.Parse(raw)
+	assembled, err := postcode.AssembleSegments(segs)
 	if err != nil {
 		res := js.Global().Get("Object").New()
 		res.Set("valid", false)
@@ -237,10 +247,111 @@ func jsAssemble(this js.Value, args []js.Value) any {
 
 	res := js.Global().Get("Object").New()
 	res.Set("valid", true)
-	res.Set("postcode", p.Formatted())
-	res.Set("display", p.String())
-	res.Set("compact", p.Raw())
+	res.Set("postcode", assembled.Postcode)
+	res.Set("display", assembled.Display)
+	res.Set("compact", assembled.Compact)
 	return res
+}
+
+func jsNormalizeSegments(this js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].Type() != js.TypeObject {
+		obj := js.Global().Get("Object").New()
+		obj.Set("error", "segments object is required with state, lga, district, area, unit")
+		return obj
+	}
+	obj := args[0]
+	segs := postcode.Segments{
+		State:    obj.Get("state").String(),
+		LGA:      obj.Get("lga").String(),
+		District: obj.Get("district").String(),
+		Area:     obj.Get("area").String(),
+		Unit:     obj.Get("unit").String(),
+	}
+	norm := postcode.NormalizeSegments(segs)
+	res := js.Global().Get("Object").New()
+	res.Set("state", norm.State)
+	res.Set("lga", norm.LGA)
+	res.Set("district", norm.District)
+	res.Set("area", norm.Area)
+	res.Set("unit", norm.Unit)
+	return res
+}
+
+func jsAssembleOnline(this js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].Type() != js.TypeObject {
+		return jsPromiseReject("segments object is required with state, lga, district, area, unit")
+	}
+	obj := args[0]
+	segs := postcode.Segments{
+		State:    obj.Get("state").String(),
+		LGA:      obj.Get("lga").String(),
+		District: obj.Get("district").String(),
+		Area:     obj.Get("area").String(),
+		Unit:     obj.Get("unit").String(),
+	}
+
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+			assembled, err := c.Assemble(context.Background(), segs)
+			if err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+			res := js.Global().Get("Object").New()
+			res.Set("valid", true)
+			res.Set("postcode", assembled.Postcode)
+			res.Set("display", assembled.Display)
+			res.Set("compact", assembled.Compact)
+			resolve.Invoke(res)
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
+}
+
+func jsDisassembleOnline(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return jsPromiseReject("code parameter is required")
+	}
+	code := args[0].String()
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+			segs, err := c.Disassemble(context.Background(), code)
+			if err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+			resolve.Invoke(toJS(segs))
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
 }
 
 func jsDisassemble(this js.Value, args []js.Value) any {
@@ -434,6 +545,222 @@ func jsListStates(this js.Value, args []js.Value) any {
 	return obj
 }
 
+func jsReferenceStatesOffline(this js.Value, args []js.Value) any {
+	states := make([]postcode.NamedCode, 0, len(postcode.NigerianStates))
+	for code, rec := range postcode.NigerianStates {
+		states = append(states, postcode.NamedCode{
+			Code: code,
+			Name: rec.Name,
+		})
+	}
+	slices.SortFunc(states, func(a, b postcode.NamedCode) int {
+		return cmp.Compare(a.Code, b.Code)
+	})
+	return toJS(states)
+}
+
+func jsReferenceStates(this js.Value, args []js.Value) any {
+	if len(args) > 0 && args[0].Type() == js.TypeBoolean && !args[0].Bool() {
+		return jsReferenceStatesOffline(this, args)
+	}
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c != nil {
+				states, err := c.ReferenceStates(context.Background())
+				if err == nil {
+					resolve.Invoke(toJS(states))
+					return
+				}
+			}
+			// Fallback to offline catalog
+			states := make([]postcode.NamedCode, 0, len(postcode.NigerianStates))
+			for code, rec := range postcode.NigerianStates {
+				states = append(states, postcode.NamedCode{
+					Code: code,
+					Name: rec.Name,
+				})
+			}
+			slices.SortFunc(states, func(a, b postcode.NamedCode) int {
+				return cmp.Compare(a.Code, b.Code)
+			})
+			resolve.Invoke(toJS(states))
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
+}
+
+func jsReferenceLGAsOffline(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return js.Global().Get("Array").New()
+	}
+	state := args[0].String()
+	lgas := postcode.StateLGAs(state)
+	return toJS(lgas)
+}
+
+func jsReferenceLGAs(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return jsPromiseReject("state parameter is required")
+	}
+	state := args[0].String()
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c != nil {
+				lgas, err := c.ReferenceLGAs(context.Background(), state)
+				if err == nil {
+					resolve.Invoke(toJS(lgas))
+					return
+				}
+			}
+			// Fallback to offline
+			lgas := postcode.StateLGAs(state)
+			resolve.Invoke(toJS(lgas))
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
+}
+
+func jsReferenceDistricts(this js.Value, args []js.Value) any {
+	if len(args) < 2 {
+		return jsPromiseReject("state and lga parameters are required")
+	}
+	state := args[0].String()
+	lga := args[1].String()
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+			districts, err := c.ReferenceDistricts(context.Background(), state, lga)
+			if err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+			resolve.Invoke(toJS(districts))
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
+}
+
+func jsReferenceAreas(this js.Value, args []js.Value) any {
+	if len(args) < 3 {
+		return jsPromiseReject("state, lga, and district parameters are required")
+	}
+	state := args[0].String()
+	lga := args[1].String()
+	district := args[2].String()
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+			areas, err := c.ReferenceAreas(context.Background(), state, lga, district)
+			if err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+			resolve.Invoke(toJS(areas))
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
+}
+
+func jsSearchNearbyBuildingsOffline(this js.Value, args []js.Value) any {
+	if len(args) < 2 {
+		return js.Global().Get("Array").New()
+	}
+	lat := args[0].Float()
+	lng := args[1].Float()
+	radiusM := 300.0
+	if len(args) > 2 && args[2].Type() == js.TypeNumber {
+		radiusM = args[2].Float()
+	}
+	results := postcode.SearchNearbyBuildingsOffline(lat, lng, radiusM)
+	return toJS(results)
+}
+
+func jsReverseCoordinatesOffline(this js.Value, args []js.Value) any {
+	if len(args) < 2 {
+		obj := js.Global().Get("Object").New()
+		obj.Set("found", false)
+		obj.Set("error", "latitude and longitude arguments are required")
+		return obj
+	}
+	lat := args[0].Float()
+	lng := args[1].Float()
+	maxDist := 25.0
+	if len(args) > 2 && args[2].Type() == js.TypeNumber {
+		maxDist = args[2].Float()
+	}
+	resp := postcode.ReverseCoordinatesOffline(lat, lng, maxDist)
+	return toJS(resp)
+}
+
+func jsHealth(this js.Value, args []js.Value) any {
+	promiseConstructor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
+		resolve := promiseArgs[0]
+		reject := promiseArgs[1]
+
+		go func() {
+			defer handler.Release()
+			c := getOrCreateClient()
+			if c == nil {
+				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
+				reject.Invoke(errObj)
+				return
+			}
+			if err := c.Health(context.Background()); err != nil {
+				errObj := js.Global().Get("Error").New(err.Error())
+				reject.Invoke(errObj)
+				return
+			}
+			res := js.Global().Get("Object").New()
+			res.Set("status", "ok")
+			resolve.Invoke(res)
+		}()
+		return nil
+	})
+	return promiseConstructor.New(handler)
+}
+
 func jsSetAPIKey(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
 		return false
@@ -452,6 +779,24 @@ func jsGetAPIKey(this js.Value, args []js.Value) any {
 	return currentKey
 }
 
+func jsSetGoogleMapsAPIKey(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return false
+	}
+	key := args[0].String()
+	clientMu.Lock()
+	currentGoogleMapsKey = key
+	resetClientLocked()
+	clientMu.Unlock()
+	return true
+}
+
+func jsGetGoogleMapsAPIKey(this js.Value, args []js.Value) any {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return currentGoogleMapsKey
+}
+
 func jsConfigure(this js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].Type() != js.TypeObject {
 		return false
@@ -464,6 +809,11 @@ func jsConfigure(this js.Value, args []js.Value) any {
 	}
 	if optObj.Get("baseURL").Type() == js.TypeString {
 		currentBase = optObj.Get("baseURL").String()
+	}
+	if optObj.Get("googleMapsApiKey").Type() == js.TypeString {
+		currentGoogleMapsKey = optObj.Get("googleMapsApiKey").String()
+	} else if optObj.Get("googleMapsKey").Type() == js.TypeString {
+		currentGoogleMapsKey = optObj.Get("googleMapsKey").String()
 	}
 	resetClientLocked()
 	return true
@@ -822,23 +1172,38 @@ func main() {
 	postcodeObj.Set("parse", js.FuncOf(jsParse))
 	postcodeObj.Set("format", js.FuncOf(jsFormat))
 	postcodeObj.Set("assemble", js.FuncOf(jsAssemble))
+	postcodeObj.Set("normalizeSegments", js.FuncOf(jsNormalizeSegments))
 	postcodeObj.Set("disassemble", js.FuncOf(jsDisassemble))
 	postcodeObj.Set("resolveLocation", js.FuncOf(jsResolveLocation))
-	postcodeObj.Set("resolveLocationOnline", js.FuncOf(jsResolveLocationOnline))
 	postcodeObj.Set("registerBuilding", js.FuncOf(jsRegisterBuilding))
 	postcodeObj.Set("registerBuildings", js.FuncOf(jsRegisterBuildings))
 	postcodeObj.Set("listStates", js.FuncOf(jsListStates))
+	postcodeObj.Set("referenceStatesOffline", js.FuncOf(jsReferenceStatesOffline))
+	postcodeObj.Set("referenceLGAsOffline", js.FuncOf(jsReferenceLGAsOffline))
+	postcodeObj.Set("stateLGAs", js.FuncOf(jsReferenceLGAsOffline))
+	postcodeObj.Set("searchNearbyBuildingsOffline", js.FuncOf(jsSearchNearbyBuildingsOffline))
+	postcodeObj.Set("reverseCoordinatesOffline", js.FuncOf(jsReverseCoordinatesOffline))
 
 	// 2. Configuration & State (Sync)
 	postcodeObj.Set("setAPIKey", js.FuncOf(jsSetAPIKey))
 	postcodeObj.Set("getAPIKey", js.FuncOf(jsGetAPIKey))
+	postcodeObj.Set("setGoogleMapsAPIKey", js.FuncOf(jsSetGoogleMapsAPIKey))
+	postcodeObj.Set("getGoogleMapsAPIKey", js.FuncOf(jsGetGoogleMapsAPIKey))
 	postcodeObj.Set("configure", js.FuncOf(jsConfigure))
 
-	// 3. Online Gateway API (Async Promises)
+	// 3. Online Gateway API & Live Catalogs (Async Promises)
+	postcodeObj.Set("resolveLocationOnline", js.FuncOf(jsResolveLocationOnline))
 	postcodeObj.Set("lookup", js.FuncOf(jsLookup))
 	postcodeObj.Set("autocomplete", js.FuncOf(jsAutocomplete))
 	postcodeObj.Set("nearby", js.FuncOf(jsNearby))
 	postcodeObj.Set("reverseGeocode", js.FuncOf(jsReverseGeocode))
+	postcodeObj.Set("assembleOnline", js.FuncOf(jsAssembleOnline))
+	postcodeObj.Set("disassembleOnline", js.FuncOf(jsDisassembleOnline))
+	postcodeObj.Set("referenceStates", js.FuncOf(jsReferenceStates))
+	postcodeObj.Set("referenceLGAs", js.FuncOf(jsReferenceLGAs))
+	postcodeObj.Set("referenceDistricts", js.FuncOf(jsReferenceDistricts))
+	postcodeObj.Set("referenceAreas", js.FuncOf(jsReferenceAreas))
+	postcodeObj.Set("health", js.FuncOf(jsHealth))
 
 	// 4. AI Agent Tooling & Guardrails (LLM Protocol Bridge)
 	postcodeObj.Set("getAgentTools", js.FuncOf(jsGetAgentTools))

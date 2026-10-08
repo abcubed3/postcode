@@ -77,18 +77,18 @@ State names, LGA names, capitals, and geopolitical zones from the built-in regis
 				loc := p.Location()
 
 				item := ParsedPostcode{
-					Input:        raw,
-					Formatted:    p.Formatted(),
-					Compact:      p.Raw(),
-					Spaced:       p.String(),
-					StateCode:    p.State(),
-					StateName:    loc.StateName,
-					LGACode:      p.LGA(),
-					LGAName:      loc.LGAName,
-					District:     p.District(),
-					Area:         p.Area(),
-					Unit:         p.BuildingUnit(),
-					Zone:         loc.Zone,
+					Input:     raw,
+					Formatted: p.Formatted(),
+					Compact:   p.Raw(),
+					Spaced:    p.String(),
+					StateCode: p.State(),
+					StateName: loc.StateName,
+					LGACode:   p.LGA(),
+					LGAName:   loc.LGAName,
+					District:  p.District(),
+					Area:      p.Area(),
+					Unit:      p.BuildingUnit(),
+					Zone:      loc.Zone,
 				}
 
 				if st, ok := postcode.NigerianStates[p.State()]; ok {

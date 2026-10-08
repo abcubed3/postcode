@@ -146,3 +146,102 @@ func TestMCPServerLifecycle_LegacyCompatibility(t *testing.T) {
 		t.Errorf("expected negotiated legacy version 2024-11-05, got %v", res1["protocolVersion"])
 	}
 }
+
+func TestMCPServer_ExtendedCapabilities(t *testing.T) {
+	server := NewMCPServer(nil) // offline mode
+
+	messages := []string{
+		// 1. tools/call assemble_postcode
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"assemble_postcode","arguments":{"state":"ek","lga":"1","district":"a03","area":"fk","unit":"1"}}}`,
+		// 2. tools/call disassemble_postcode
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"disassemble_postcode","arguments":{"code":"EK-01-A03-FK-01"}}}`,
+		// 3. tools/call list_lgas
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_lgas","arguments":{"state":"LA"}}}`,
+		// 4. resources/read postcode://lgas
+		`{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"postcode://lgas"}}`,
+		// 5. resources/read postcode://lgas/LA
+		`{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"postcode://lgas/LA"}}`,
+		// 6. prompts/list
+		`{"jsonrpc":"2.0","id":6,"method":"prompts/list"}`,
+		// 7. prompts/get assemble-nigerian-postcode
+		`{"jsonrpc":"2.0","id":7,"method":"prompts/get","params":{"name":"assemble-nigerian-postcode","arguments":{"state":"LA","lga":"01"}}}`,
+	}
+
+	inputBuf := bytes.NewBufferString(strings.Join(messages, "\n") + "\n")
+	outputBuf := &bytes.Buffer{}
+
+	err := server.Serve(inputBuf, outputBuf)
+	if err != nil && err != io.EOF {
+		t.Fatalf("server.Serve error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(outputBuf.String()), "\n")
+	if len(lines) != 7 {
+		t.Fatalf("expected 7 responses, got %d. Output:\n%s", len(lines), outputBuf.String())
+	}
+
+	parseResp := func(line string) map[string]any {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("invalid json line %q: %v", line, err)
+		}
+		return m
+	}
+
+	// 1. assemble_postcode response check
+	r1 := parseResp(lines[0])
+	res1 := r1["result"].(map[string]any)
+	content1 := res1["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(content1, "EK-01-A03-FK-01") {
+		t.Errorf("expected assembled code in response, got %s", content1)
+	}
+
+	// 2. disassemble_postcode response check
+	r2 := parseResp(lines[1])
+	res2 := r2["result"].(map[string]any)
+	content2 := res2["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(content2, `"state":"EK"`) || !strings.Contains(content2, `"district":"A03"`) {
+		t.Errorf("expected disassembled segments, got %s", content2)
+	}
+
+	// 3. list_lgas response check
+	r3 := parseResp(lines[2])
+	res3 := r3["result"].(map[string]any)
+	content3 := res3["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(content3, "Ikeja") && !strings.Contains(content3, "Agege") {
+		t.Errorf("expected Lagos LGAs in response, got %s", content3)
+	}
+
+	// 4. resources/read postcode://lgas
+	r4 := parseResp(lines[3])
+	res4 := r4["result"].(map[string]any)
+	text4 := res4["contents"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text4, "Ado Ekiti") {
+		t.Errorf("expected LGAs registry content, got %s", text4)
+	}
+
+	// 5. resources/read postcode://lgas/LA
+	r5 := parseResp(lines[4])
+	res5 := r5["result"].(map[string]any)
+	text5 := res5["contents"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text5, "Ikeja") {
+		t.Errorf("expected Lagos state LGAs content, got %s", text5)
+	}
+
+	// 6. prompts/list check
+	r6 := parseResp(lines[5])
+	res6 := r6["result"].(map[string]any)
+	prompts := res6["prompts"].([]any)
+	if len(prompts) < 2 {
+		t.Errorf("expected at least 2 prompts, got %d", len(prompts))
+	}
+
+	// 7. prompts/get assemble-nigerian-postcode
+	r7 := parseResp(lines[6])
+	res7 := r7["result"].(map[string]any)
+	msgs := res7["messages"].([]any)
+	promptBody := msgs[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	if !strings.Contains(promptBody, "assemble_postcode") {
+		t.Errorf("expected assemble prompt body, got %s", promptBody)
+	}
+}

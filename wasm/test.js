@@ -123,6 +123,75 @@ async function run() {
   );
   console.log('✔ nearby() & reverseGeocode() flexible signature validation passed');
 
+  // 13. Single-digit Segment Normalization & Padding in assemble()
+  const unpadded = postcode.assemble({ state: 'ek', lga: '1', district: 'a03', area: 'fk', unit: '1' });
+  assert.strictEqual(unpadded.valid, true);
+  assert.strictEqual(unpadded.postcode, 'EK-01-A03-FK-01');
+  assert.strictEqual(unpadded.display, 'EK 01 A03 FK 01');
+  assert.strictEqual(unpadded.compact, 'EK01A03FK01');
+
+  const normalized = postcode.normalizeSegments({ state: 'ek', lga: '1', district: 'a03', area: 'fk', unit: '1' });
+  assert.strictEqual(normalized.state, 'EK');
+  assert.strictEqual(normalized.lga, '01');
+  assert.strictEqual(normalized.district, 'A03');
+  assert.strictEqual(normalized.area, 'FK');
+  assert.strictEqual(normalized.unit, '01');
+  console.log('✔ assemble() single-digit padding & normalizeSegments() passed');
+
+  // 14. Offline Reference Catalogs (States and LGAs)
+  const refStates = postcode.referenceStatesOffline();
+  assert.strictEqual(refStates.length, 37);
+  assert.strictEqual(refStates[0].code, 'AB');
+  assert.strictEqual(refStates[0].name, 'Abia');
+
+  const refLGAs = postcode.referenceLGAsOffline('LA');
+  assert(refLGAs.length >= 20);
+  assert.strictEqual(refLGAs[0].code, '01');
+
+  const stateLGAs = postcode.stateLGAs('LA');
+  assert.strictEqual(stateLGAs.length, refLGAs.length);
+  console.log('✔ referenceStatesOffline() & referenceLGAsOffline() passed');
+
+  // 15. Offline Spatial Geocoding & Radius Search
+  const nearbyOffline = postcode.searchNearbyBuildingsOffline(7.6211, 5.2215, 300);
+  assert(Array.isArray(nearbyOffline) && nearbyOffline.length > 0);
+  assert.strictEqual(nearbyOffline[0].postcode, 'EK-01-A03-FK-01');
+
+  const reverseOffline = postcode.reverseCoordinatesOffline(7.6211, 5.2215, 50);
+  assert.strictEqual(reverseOffline.found, true);
+  assert.strictEqual(reverseOffline.unit.postcode, 'EK-01-A03-FK-01');
+  console.log('✔ searchNearbyBuildingsOffline() & reverseCoordinatesOffline() passed');
+
+  // 16. Google Maps Geocoding Configuration
+  postcode.setGoogleMapsAPIKey('test_gmaps_key_123');
+  assert.strictEqual(postcode.getGoogleMapsAPIKey(), 'test_gmaps_key_123');
+  postcode.configure({ googleMapsApiKey: 'updated_gmaps_key_456' });
+  assert.strictEqual(postcode.getGoogleMapsAPIKey(), 'updated_gmaps_key_456');
+  console.log('✔ setGoogleMapsAPIKey() & configure({googleMapsApiKey}) passed');
+
+  // 17. Async Reference Catalogs (with offline fallback)
+  const asyncStates = await postcode.referenceStates();
+  assert.strictEqual(asyncStates.length, 37);
+  const asyncLGAs = await postcode.referenceLGAs('LA');
+  assert(asyncLGAs.length >= 20);
+  console.log('✔ async referenceStates() & referenceLGAs() passed');
+
+  // 18. AI Agent Tool: assemble_postcode
+  const toolAssembled = await postcode.executeTool('assemble_postcode', {
+    state: 'ek', lga: '1', district: 'a03', area: 'fk', unit: '1'
+  });
+  assert.strictEqual(toolAssembled.postcode, 'EK-01-A03-FK-01');
+  console.log('✔ executeTool("assemble_postcode") passed');
+
+  // 19. AI Agent Tools: disassemble_postcode & list_lgas
+  const toolDis = await postcode.executeTool('disassemble_postcode', { code: 'EK-01-A03-FK-01' });
+  assert.strictEqual(toolDis.state, 'EK');
+  assert.strictEqual(toolDis.district, 'A03');
+
+  const toolLGAs = await postcode.executeTool('list_lgas', { state: 'LA' });
+  assert(Array.isArray(toolLGAs) && toolLGAs.length >= 20);
+  console.log('✔ executeTool("disassemble_postcode") & executeTool("list_lgas") passed');
+
   console.log('\nAll parity verification tests passed successfully! 🎉');
 }
 

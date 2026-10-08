@@ -546,4 +546,3 @@ func TestClient_ReferenceCatalog(t *testing.T) {
 		t.Errorf("unexpected areas: %+v", areas)
 	}
 }
-

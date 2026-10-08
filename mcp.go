@@ -2,11 +2,13 @@ package postcode
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -206,7 +208,7 @@ func (s *MCPServer) handleRequest(ctx context.Context, req mcpRequest) mcpRespon
 					"prompts":   map[string]any{},
 				},
 				"_meta":        standardServerInfoMeta(),
-				"instructions": "This server provides tools and reference data for Nigeria's National Digital Alphanumeric Postcodes (NIPOST).",
+				"instructions": "This server provides comprehensive tools and reference data for Nigeria's National Digital Alphanumeric Postcodes (NIPOST): validation, diagnostic guidance, location resolution, reverse geocoding, nearby radius search, autocomplete, graded gateway lookups (Levels 1–5), states and LGA reference catalogs, and segment-level postcode assembly and disassembly.",
 				"ttlMs":        3600000, // 1 hour caching recommendation (SEP-2549)
 				"cacheScope":   "public",
 			},
@@ -359,6 +361,12 @@ func (s *MCPServer) handleRequest(ctx context.Context, req mcpRequest) mcpRespon
 						"mimeType":    "application/json",
 					},
 					{
+						"uri":         "postcode://lgas",
+						"name":        "Nigerian Local Government Areas (LGAs) Reference Registry",
+						"description": "Directory of registered Local Government Areas mapped across Nigerian states with codes and centroid coordinates",
+						"mimeType":    "application/json",
+					},
+					{
 						"uri":         "postcode://grammar",
 						"name":        "Nigerian Postcode Grammar Specification",
 						"description": "NIPOST standard specification for 11-digit alphanumeric postcode structure",
@@ -411,6 +419,35 @@ func (s *MCPServer) handleRequest(ctx context.Context, req mcpRequest) mcpRespon
 				},
 			}
 
+		case "postcode://lgas":
+			var lgas []LGARecord
+			for _, rec := range knownLGAs {
+				lgas = append(lgas, rec)
+			}
+			slices.SortFunc(lgas, func(a, b LGARecord) int {
+				if a.StateCode != b.StateCode {
+					return cmp.Compare(a.StateCode, b.StateCode)
+				}
+				return cmp.Compare(a.LGACode, b.LGACode)
+			})
+			bytes, _ := json.MarshalIndent(lgas, "", "  ")
+			return mcpResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"resultType": "complete",
+					"contents": []map[string]any{
+						{
+							"uri":      params.URI,
+							"mimeType": "application/json",
+							"text":     string(bytes),
+						},
+					},
+					"ttlMs":      3600000,
+					"cacheScope": "public",
+				},
+			}
+
 		case "postcode://grammar":
 			grammarDoc := `# NIPOST National Digital Alphanumeric Postcode Specification
 
@@ -444,6 +481,27 @@ Compact representation: AA99A00AA99.
 			}
 
 		default:
+			if strings.HasPrefix(params.URI, "postcode://lgas/") {
+				st := strings.ToUpper(strings.TrimPrefix(params.URI, "postcode://lgas/"))
+				items := StateLGAs(st)
+				bytes, _ := json.MarshalIndent(items, "", "  ")
+				return mcpResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"resultType": "complete",
+						"contents": []map[string]any{
+							{
+								"uri":      params.URI,
+								"mimeType": "application/json",
+								"text":     string(bytes),
+							},
+						},
+						"ttlMs":      3600000,
+						"cacheScope": "public",
+					},
+				}
+			}
 			// MCP 2026-07-28 uses -32602 (Invalid Params) for resource not found
 			return mcpResponse{
 				JSONRPC: "2.0",
@@ -467,6 +525,22 @@ Compact representation: AA99A00AA99.
 							{
 								"name":        "raw_address",
 								"description": "Informal address text (e.g. '14 Admiralty Way, Lekki Phase 1, Lagos')",
+								"required":    true,
+							},
+						},
+					},
+					{
+						"name":        "assemble-nigerian-postcode",
+						"description": "Instructions for assembling and validating an 11-digit NIPOST postcode from individual administrative segments",
+						"arguments": []map[string]any{
+							{
+								"name":        "state",
+								"description": "2-letter state code (e.g. 'LA', 'EK', 'FC')",
+								"required":    true,
+							},
+							{
+								"name":        "lga",
+								"description": "Local Government Area code or number (e.g. '01', '1', '11')",
 								"required":    true,
 							},
 						},
@@ -510,6 +584,40 @@ Follow these steps:
 				Result: map[string]any{
 					"resultType":  "complete",
 					"description": "Nigerian address normalization instructions",
+					"messages": []map[string]any{
+						{
+							"role": "user",
+							"content": map[string]any{
+								"type": "text",
+								"text": promptText,
+							},
+						},
+					},
+				},
+			}
+		}
+
+		if params.Name == "assemble-nigerian-postcode" {
+			stateVal := params.Arguments["state"]
+			lgaVal := params.Arguments["lga"]
+			promptText := fmt.Sprintf(`You are an Assistant specialized in Nigerian Postcodes.
+Your objective is to construct a canonical 11-digit postcode for:
+State: %s
+LGA: %s
+
+Follow these instructions:
+1. Call 'list_lgas' for state %q if you need to verify the exact 2-digit LGA code.
+2. Determine or solicit the 3-character district, 2-letter area, and 2-digit building unit.
+3. Call 'assemble_postcode' with the 5 segments (single digits will be zero-padded automatically).
+4. Call 'validate_postcode' or 'lookup_postcode' to confirm accuracy.
+5. If any validation error occurs, call 'diagnose_postcode' for actionable correction guidance.`, stateVal, lgaVal, stateVal)
+
+			return mcpResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"resultType":  "complete",
+					"description": "Nigerian postcode assembly guidance",
 					"messages": []map[string]any{
 						{
 							"role": "user",

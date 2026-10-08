@@ -27,6 +27,7 @@ import (
 // levels 4 and 5 represent unreleased or restricted government tiers:
 //   - Level 4: other_building_info (unreleased building metadata)
 //   - Level 5: point_geometry (restricted government GIS coordinates)
+//
 // Standard commercial keys do NOT have access to L4/L5. The SDK defines Level4 and Level5
 // for backward compatibility and private enterprise mock environments.
 type LookupLevel int
@@ -248,8 +249,6 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 	return &loc, nil
 }
 
-
-
 // AutocompleteSuggestion represents an individual suggestion returned by autocomplete.
 type AutocompleteSuggestion struct {
 	Code  string `json:"code"`
@@ -281,7 +280,7 @@ type NearbyParams struct {
 	Postcode  string  `json:"postcode,omitempty"` // Optional reference postcode (auto-resolves centroid if coordinates are 0)
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
-	RadiusM   float64 `json:"radius_m"`           // Search radius in meters (default 300, max 300)
+	RadiusM   float64 `json:"radius_m"` // Search radius in meters (default 300, max 300)
 }
 
 // NearbyUnit represents a building unit found near a coordinate.
@@ -361,9 +360,9 @@ func (c *Client) NearbyPostcode(ctx context.Context, code string, radiusM float6
 
 // ReverseParams configures reverse geocoding to snap coordinates to the nearest unit.
 type ReverseParams struct {
-	Latitude      float64
-	Longitude     float64
-	MaxDistanceM  float64 // Search radius in meters (default 25, max 250)
+	Latitude     float64
+	Longitude    float64
+	MaxDistanceM float64 // Search radius in meters (default 25, max 250)
 }
 
 // ReverseResponse represents the result of reverse geocoding a coordinate.

@@ -80,8 +80,8 @@ func main() {
 	orders := []DeliveryOrder{
 		{ID: "ORD-001", CustomerName: "Amina Yusuf", RawAddress: "Victoria Island", Postcode: "LA 11 W06 TC 10"},
 		{ID: "ORD-002", CustomerName: "Chidi Okafor", RawAddress: "Victoria Island (Repeat)", Postcode: "LA 11 W06 TC 10"}, // Same postcode -> cache hit!
-		{ID: "ORD-003", CustomerName: "Tunde Bakare", RawAddress: "Ado Ekiti Center", Postcode: "EK 01 A03 FK 01"},      // Second commercial call
-		{ID: "ORD-004", CustomerName: "Fatima Aliyu", RawAddress: "Abuja Central", Postcode: "FC 03 B06 AG 12"},         // Commercial budget exhausted -> auto-downgraded to Level 1!
+		{ID: "ORD-003", CustomerName: "Tunde Bakare", RawAddress: "Ado Ekiti Center", Postcode: "EK 01 A03 FK 01"},         // Second commercial call
+		{ID: "ORD-004", CustomerName: "Fatima Aliyu", RawAddress: "Abuja Central", Postcode: "FC 03 B06 AG 12"},            // Commercial budget exhausted -> auto-downgraded to Level 1!
 	}
 
 	for _, order := range orders {

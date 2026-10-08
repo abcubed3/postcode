@@ -97,7 +97,57 @@ func TestAgentDispatcherOffline(t *testing.T) {
 		t.Errorf("expected 37 states, got %d", len(states))
 	}
 
-	// 6. Online tool in offline mode should return clear error
+	// 6. assemble_postcode
+	resAssemble, err := dispatcher.Dispatch(ctx, "assemble_postcode", []byte(`{"state":"ek","lga":"1","district":"a03","area":"fk","unit":"1"}`))
+	if err != nil {
+		t.Fatalf("assemble_postcode failed: %v", err)
+	}
+	asmb, ok := resAssemble.(AssembledPostcode)
+	if !ok || asmb.Postcode != "EK-01-A03-FK-01" {
+		t.Errorf("expected assembled EK-01-A03-FK-01, got %+v", resAssemble)
+	}
+
+	// 7. disassemble_postcode offline
+	resDis, err := dispatcher.Dispatch(ctx, "disassemble_postcode", []byte(`{"code":"EK-01-A03-FK-01"}`))
+	if err != nil {
+		t.Fatalf("disassemble_postcode failed: %v", err)
+	}
+	segs, ok := resDis.(*Segments)
+	if !ok || segs.State != "EK" || segs.LGA != "01" || segs.District != "A03" || segs.Area != "FK" || segs.Unit != "01" {
+		t.Errorf("expected disassembled segments for EK-01-A03-FK-01, got %+v", resDis)
+	}
+
+	// 8. list_lgas offline
+	resLGAs, err := dispatcher.Dispatch(ctx, "list_lgas", []byte(`{"state":"FC"}`))
+	if err != nil {
+		t.Fatalf("list_lgas failed: %v", err)
+	}
+	lgas, ok := resLGAs.([]NamedCode)
+	if !ok || len(lgas) == 0 {
+		t.Errorf("expected non-empty LGAs for FC, got %+v", resLGAs)
+	}
+
+	// 9. reverse_geocode offline
+	resRev, err := dispatcher.Dispatch(ctx, "reverse_geocode", []byte(`{"latitude":7.6211,"longitude":5.2215,"max_distance_m":100}`))
+	if err != nil {
+		t.Fatalf("reverse_geocode offline failed: %v", err)
+	}
+	revResp, ok := resRev.(*ReverseResponse)
+	if !ok || !revResp.Found {
+		t.Errorf("expected found reverse geocode for Ado Ekiti coordinates, got %+v", resRev)
+	}
+
+	// 10. search_nearby offline
+	resNearby, err := dispatcher.Dispatch(ctx, "search_nearby", []byte(`{"latitude":7.6211,"longitude":5.2215,"radius_m":500}`))
+	if err != nil {
+		t.Fatalf("search_nearby offline failed: %v", err)
+	}
+	nbResp, ok := resNearby.(*NearbyResponse)
+	if !ok || len(nbResp.Results) == 0 {
+		t.Errorf("expected nearby units found offline, got %+v", resNearby)
+	}
+
+	// 11. Online-only tool without client should return clear error
 	_, errOnline := dispatcher.Dispatch(ctx, "lookup_postcode", []byte(`{"code":"EK-01-A03-FK-01"}`))
 	if errOnline == nil || !strings.Contains(errOnline.Error(), "gateway client is required") {
 		t.Errorf("expected gateway client required error, got %v", errOnline)

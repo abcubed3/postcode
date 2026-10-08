@@ -99,35 +99,56 @@ main();
 | `diagnose(code: string): DiagnosticReport` | Granular per-segment error detection with fuzzy repair tips. |
 | `parse(code: string): ParsedPostcode` | Extracts full parsed model with capital, zone, and components. |
 | `format(code: string, style?: string): string` | Normalizes to `canonical`, `compact`, `spaced`, `hyphenated`, or `slug`. |
-| `assemble(segments: Segments): AssembledPostcode` | Assembles 5 administrative segments into canonical, display, and compact codes. |
+| `assemble(segments: Segments): AssembledPostcode` | Assembles 5 segments with automatic zero-padding (e.g. LGA '1' -> '01'). |
+| `normalizeSegments(segments: Segments): Segments` | Trims, uppercases, and zero-fills single-digit numeric segments. |
 | `disassemble(code: string): Segments` | Decomposes code into state, LGA, district, area, and building unit. |
 | `resolveLocation(code: string): LocationResult` | Resolves offline centroid coordinates, Google Maps, Apple Maps, and OSM links. |
-| `resolveLocationOnline(code: string): Promise<LocationResult>` | Fetches pinpoint building coordinates online via NIPOST cadastral discovery with local caching. |
 | `registerBuilding(record: BuildingRecord): boolean` | Registers custom building unit into local geocoding registry. |
 | `registerBuildings(records: BuildingRecord[]): number` | Bulk registers multiple building records for instant offline resolution. |
 | `listStates(): Record<string, StateRecord>` | Returns static dictionary of all 36 Nigerian States + FCT. |
+| `referenceStatesOffline(): NamedCode[]` | Returns all 37 Nigerian states sorted by code with human-readable names. |
+| `referenceLGAsOffline(state: string): NamedCode[]` | Returns all known Local Government Areas for a state code (alias `stateLGAs`). |
+| `searchNearbyBuildingsOffline(lat, lng, radiusM?): NearbyUnit[]` | Fast spatial radius search across embedded and cached building units. |
+| `reverseCoordinatesOffline(lat, lng, maxDistanceM?): ReverseResponse` | Snaps GPS coordinates to nearest registered unit without network calls. |
+
+### Configuration & Key Management (Sync)
+| Method | Description |
+|---|---|
+| `setAPIKey(key: string): boolean` | Sets live NIPOST Gateway API key. |
+| `getAPIKey(): string` | Retrieves currently active NIPOST API key. |
+| `setGoogleMapsAPIKey(key: string): boolean` | Sets Google Maps Geocoding API v4 key for enhanced geocoding. |
+| `getGoogleMapsAPIKey(): string` | Retrieves configured Google Maps API key. |
+| `configure(options: PostcodeEngineOptions): boolean` | Configures `apiKey`, `baseURL`, and `googleMapsApiKey` in one call. |
 
 ### AI Agent Protocol & Benchmarking
 | Method | Description |
 |---|---|
-| `getAgentTools(format?: 'openai' \| 'anthropic' \| 'gemini'): any[]` | Exports JSON schemas for agent function calling. |
+| `getAgentTools(format?: 'openai' \| 'anthropic' \| 'gemini'): any[]` | Exports JSON schemas for agent function calling (includes `assemble_postcode`, `validate_postcode`, etc.). |
 | `executeTool(name: string, args: any): Promise<any>` | Directly invokes agent tool handlers with structured responses. |
 | `getAgentMetrics(): AgentGuardMetrics` | Telemetry for commercial vs. offline calls and downgrade rates. |
 | `generateSyntheticAddresses(options?: GeneratorOptions): SyntheticAddress[]` | Generates realistic dirty/clean addresses with ground truth for LLM evaluation. |
 
-### Live Gateway Operations (Async)
+### Live Gateway Operations & Catalogs (Async)
 | Method | Description |
 |---|---|
-| `lookup(code: string, level?: number): Promise<LookupResponse>` | Queries NIPOST Gateway for Level 1, 2, or 3 commercial metadata. |
+| `lookup(code: string, level?: number): Promise<LookupResponse>` | Queries NIPOST Gateway for Levels 1–5 metadata (Level 2+ requires API key). |
 | `autocomplete(query: string): Promise<AutocompleteResponse>` | Real-time address and street suggestions. |
-| `nearby(postcodeOrParams, radiusM?)` | Radius search using either a reference postcode or coordinate options. |
-| `reverseGeocode(latOrParams, lng?, maxDistanceM?)` | Reverse-resolves latitude and longitude into nearest valid postcode. |
+| `nearby(postcodeOrParams, radiusM?): Promise<NearbyResponse>` | Radius search using either a reference postcode or coordinate options. |
+| `reverseGeocode(latOrParams, lng?, maxDistanceM?): Promise<ReverseResponse>` | Reverse-resolves latitude and longitude into nearest valid postcode. |
+| `resolveLocationOnline(code: string): Promise<LocationResult>` | Fetches pinpoint building coordinates online via NIPOST cadastral discovery with local caching. |
+| `assembleOnline(segments: Segments): Promise<AssembledPostcode>` | Validates and generates postcode via gateway assembly endpoint. |
+| `disassembleOnline(code: string): Promise<Segments>` | Deconstructs postcode via gateway endpoint. |
+| `referenceStates(online?: boolean): Promise<NamedCode[]>` | Queries official state catalog with automatic offline fallback. |
+| `referenceLGAs(state: string): Promise<NamedCode[]>` | Queries official LGA catalog with automatic offline fallback. |
+| `referenceDistricts(state, lga): Promise<NamedCode[]>` | Queries postal district codes under state and LGA. |
+| `referenceAreas(state, lga, district): Promise<NamedCode[]>` | Queries postal area codes under state, LGA, and district. |
+| `health(): Promise<{ status: string }>` | Probes live gateway health status (`GET /healthz`). |
 
-## Configuring the NIPOST API Key
+## Configuring API Keys
 
 ### 1. Offline vs. Online Boundary
-- **Offline Methods (No API Key Required)**: `validate()`, `validateBatch()`, `diagnose()`, `parse()`, `format()`, `assemble()`, `disassemble()`, `resolveLocation()`, `listStates()`, `getAgentTools()`, and `generateSyntheticAddresses()` run 100% offline in WebAssembly memory with zero network latency.
-- **Online Methods (API Key Configurable)**: `lookup()`, `autocomplete()`, `nearby()`, and `reverseGeocode()` connect to the live NIPOST Gateway (for commercial Level 2/3 street names and building use classification; note that commercial API keys are strictly capped at Level 3).
+- **Offline Methods (Zero Network Overhead)**: `validate()`, `validateBatch()`, `diagnose()`, `parse()`, `format()`, `assemble()`, `normalizeSegments()`, `disassemble()`, `resolveLocation()`, `listStates()`, `referenceStatesOffline()`, `referenceLGAsOffline()`, `searchNearbyBuildingsOffline()`, `reverseCoordinatesOffline()`, `getAgentTools()`, and `generateSyntheticAddresses()` run 100% offline in WebAssembly memory with zero network latency.
+- **Online Methods (API Key Configurable)**: `lookup()`, `autocomplete()`, `nearby()`, `reverseGeocode()`, `referenceDistricts()`, `referenceAreas()`, and `health()` connect to the live NIPOST Gateway. Commercial Level 2+ lookups require an API key. Google Maps API key can optionally be provided to enhance geocoding resolution via Google Maps Geocoding API v4.
 
 ### 2. Ways to Set or Update the API Key
 

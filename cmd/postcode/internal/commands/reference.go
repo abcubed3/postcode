@@ -13,12 +13,12 @@ import (
 )
 
 type ReferenceResult struct {
-	Type    string               `json:"type"`
-	State   string               `json:"state,omitempty"`
-	LGA     string               `json:"lga,omitempty"`
-	District string              `json:"district,omitempty"`
-	Total   int                  `json:"total"`
-	Items   []postcode.NamedCode `json:"items"`
+	Type     string               `json:"type"`
+	State    string               `json:"state,omitempty"`
+	LGA      string               `json:"lga,omitempty"`
+	District string               `json:"district,omitempty"`
+	Total    int                  `json:"total"`
+	Items    []postcode.NamedCode `json:"items"`
 }
 
 func (rr ReferenceResult) CSVHeader() []string {

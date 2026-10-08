@@ -227,9 +227,16 @@ export interface GeneratorOptions {
   seed?: number;
 }
 
+export interface NamedCode {
+  code: string;
+  name?: string;
+}
+
 export interface PostcodeEngineOptions {
   apiKey?: string;
   baseURL?: string;
+  googleMapsApiKey?: string;
+  googleMapsKey?: string;
 }
 
 export interface StateRecord {
@@ -249,24 +256,39 @@ export interface PostcodeEngine {
   parse(code: string): ParsedPostcode;
   format(code: string, style?: 'canonical' | 'compact' | 'spaced' | 'hyphenated' | 'slug'): string;
   assemble(segments: { state: string; lga: string; district: string; area: string; unit: string }): AssembledPostcode;
+  normalizeSegments(segments: { state: string; lga: string; district: string; area: string; unit: string }): Segments;
   disassemble(code: string): Segments;
   resolveLocation(code: string): LocationResult;
-  resolveLocationOnline(code: string): Promise<LocationResult>;
   registerBuilding(record: BuildingRecord): boolean;
   registerBuildings(records: BuildingRecord[]): number;
   listStates(): Record<string, StateRecord>;
+  referenceStatesOffline(): NamedCode[];
+  referenceLGAsOffline(state: string): NamedCode[];
+  stateLGAs(state: string): NamedCode[];
+  searchNearbyBuildingsOffline(latitude: number, longitude: number, radiusM?: number): NearbyUnit[];
+  reverseCoordinatesOffline(latitude: number, longitude: number, maxDistanceM?: number): ReverseResponse;
 
   // --- 2. Configuration & State (Sync) ---
   setAPIKey(key: string): boolean;
   getAPIKey(): string;
+  setGoogleMapsAPIKey(key: string): boolean;
+  getGoogleMapsAPIKey(): string;
   configure(options: PostcodeEngineOptions): boolean;
 
-  // --- 3. Live Gateway Operations (Async) ---
+  // --- 3. Live Gateway Operations & Catalogs (Async) ---
+  resolveLocationOnline(code: string): Promise<LocationResult>;
   lookup(code: string, level?: number): Promise<LookupResponse>;
   autocomplete(query: string): Promise<AutocompleteResponse>;
   nearby(postcodeOrParams: string | NearbyOptions, radiusM?: number): Promise<NearbyResponse>;
   nearby(latitude: number, longitude: number, radiusM?: number): Promise<NearbyResponse>;
   reverseGeocode(latOrParams: number | ReverseOptions, lng?: number, maxDistanceM?: number): Promise<ReverseResponse>;
+  assembleOnline(segments: { state: string; lga: string; district: string; area: string; unit: string }): Promise<AssembledPostcode>;
+  disassembleOnline(code: string): Promise<Segments>;
+  referenceStates(online?: boolean): Promise<NamedCode[]>;
+  referenceLGAs(state: string): Promise<NamedCode[]>;
+  referenceDistricts(state: string, lga: string): Promise<NamedCode[]>;
+  referenceAreas(state: string, lga: string, district: string): Promise<NamedCode[]>;
+  health(): Promise<{ status: string }>;
 
   // --- 4. AI Agent Tooling & Guardrails ---
   getAgentTools(format?: 'openai' | 'anthropic' | 'gemini'): any[];

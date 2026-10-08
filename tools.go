@@ -152,7 +152,7 @@ func DefaultAgentTools() []ToolDef {
 		},
 		{
 			Name:        "lookup_postcode",
-			Description: "Queries the NIPOST gateway for graded attributes of a postcode (Level 1 free validity check, Levels 2-3 commercial addresses and building use).",
+			Description: "Queries the NIPOST gateway for graded attributes of a postcode (Level 1 free validity check, Levels 2-3 commercial addresses and building use, Levels 4-5 building metadata and geometry).",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -162,7 +162,7 @@ func DefaultAgentTools() []ToolDef {
 					},
 					"level": map[string]any{
 						"type":        "integer",
-						"description": "Lookup tier: 1 (Free validity check), 2 (Commercial address), 3 (Commercial building use). Default is 1.",
+						"description": "Lookup tier: 1 (Free validity check), 2 (Commercial address), 3 (Commercial building use), 4 (Building metadata), 5 (Point geometry). Default is 1.",
 					},
 				},
 				"required": []string{"code"},
@@ -174,6 +174,49 @@ func DefaultAgentTools() []ToolDef {
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
+			},
+		},
+		{
+			Name:        "list_lgas",
+			Description: "Returns all Local Government Areas (LGAs) for a given Nigerian state code (e.g. 'LA', 'FC', 'EK') from official reference data.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"state": map[string]any{
+						"type":        "string",
+						"description": "2-letter Nigerian state code (e.g. 'LA', 'FC', 'EK').",
+					},
+				},
+				"required": []string{"state"},
+			},
+		},
+		{
+			Name:        "assemble_postcode",
+			Description: "Assembles 5 administrative segments (state, LGA, district, area, building unit) into canonical, display, and compact Nigerian postcodes, with automatic zero-padding for single-digit numbers.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"state":    map[string]any{"type": "string", "description": "2-letter state code (e.g. 'EK', 'LA')."},
+					"lga":      map[string]any{"type": "string", "description": "LGA numeric code (e.g. '01' or '1')."},
+					"district": map[string]any{"type": "string", "description": "3-character district code (e.g. 'A03')."},
+					"area":     map[string]any{"type": "string", "description": "2-letter area code (e.g. 'FK')."},
+					"unit":     map[string]any{"type": "string", "description": "Building unit code (e.g. '01' or '1')."},
+				},
+				"required": []string{"state", "lga", "district", "area", "unit"},
+			},
+		},
+		{
+			Name:        "disassemble_postcode",
+			Description: "Deconstructs an 11-digit Nigerian postcode into its 5 constituent administrative segments (State, LGA, District, Area, Unit) and structural components.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"code": map[string]any{
+						"type":        "string",
+						"description": "11-character Nigerian postcode to disassemble (e.g. 'EK-01-A03-FK-01').",
+					},
+				},
+				"required": []string{"code"},
 			},
 		},
 	}
@@ -203,6 +246,17 @@ func (d *AgentDispatcher) Tools() []ToolDef {
 // Dispatch executes the specified tool by name with unparsed JSON arguments.
 func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []byte) (any, error) {
 	switch name {
+	case "assemble_postcode":
+		var args Segments
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		assembled, err := AssembleSegments(args)
+		if err != nil {
+			return nil, err
+		}
+		return assembled, nil
+
 	case "validate_postcode":
 		var args struct {
 			Code string `json:"code"`
@@ -262,10 +316,27 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 		}
 		return &loc, nil
 
-	case "reverse_geocode":
-		if d.client == nil {
-			return nil, fmt.Errorf("gateway client is required for reverse geocoding")
+	case "disassemble_postcode":
+		var args struct {
+			Code string `json:"code"`
 		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if d.client != nil {
+			segs, err := d.client.Disassemble(ctx, args.Code)
+			if err == nil {
+				return segs, nil
+			}
+		}
+		p, err := Parse(args.Code)
+		if err != nil {
+			return nil, err
+		}
+		segs := p.Disassemble()
+		return &segs, nil
+
+	case "reverse_geocode":
 		var args struct {
 			Latitude     float64 `json:"latitude"`
 			Longitude    float64 `json:"longitude"`
@@ -274,16 +345,19 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 		if err := json.Unmarshal(argsJSON, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
-		return d.client.Reverse(ctx, ReverseParams{
-			Latitude:     args.Latitude,
-			Longitude:    args.Longitude,
-			MaxDistanceM: args.MaxDistanceM,
-		})
+		if d.client != nil {
+			resp, err := d.client.Reverse(ctx, ReverseParams{
+				Latitude:     args.Latitude,
+				Longitude:    args.Longitude,
+				MaxDistanceM: args.MaxDistanceM,
+			})
+			if err == nil {
+				return resp, nil
+			}
+		}
+		return ReverseCoordinatesOffline(args.Latitude, args.Longitude, args.MaxDistanceM), nil
 
 	case "search_nearby":
-		if d.client == nil {
-			return nil, fmt.Errorf("gateway client is required for nearby search")
-		}
 		var args struct {
 			Code      string  `json:"code"`
 			Postcode  string  `json:"postcode"`
@@ -312,12 +386,25 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 		if lat == 0 && lng == 0 {
 			return nil, fmt.Errorf("either reference postcode ('code') or 'latitude' and 'longitude' must be provided")
 		}
-		return d.client.Nearby(ctx, NearbyParams{
-			Postcode:  targetCode,
-			Latitude:  lat,
-			Longitude: lng,
-			RadiusM:   args.RadiusM,
-		})
+		if d.client != nil {
+			resp, err := d.client.Nearby(ctx, NearbyParams{
+				Postcode:  targetCode,
+				Latitude:  lat,
+				Longitude: lng,
+				RadiusM:   args.RadiusM,
+			})
+			if err == nil {
+				return resp, nil
+			}
+		}
+		radius := args.RadiusM
+		if radius <= 0 {
+			radius = 300
+		}
+		units := SearchNearbyBuildingsOffline(lat, lng, radius)
+		return &NearbyResponse{
+			Results: units,
+		}, nil
 
 	case "autocomplete_postcode":
 		if d.client == nil {
@@ -357,6 +444,21 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 			return states[i].Code < states[j].Code
 		})
 		return states, nil
+
+	case "list_lgas":
+		var args struct {
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if d.client != nil {
+			lgas, err := d.client.ReferenceLGAs(ctx, args.State)
+			if err == nil {
+				return lgas, nil
+			}
+		}
+		return StateLGAs(args.State), nil
 
 	default:
 		return nil, fmt.Errorf("unknown tool name: %q", name)

@@ -302,6 +302,13 @@ func handleLookup(w http.ResponseWriter, r *http.Request) {
 		data["building_use_status"] = rec.BuildingUse
 	}
 
+	if level >= 4 {
+		data["other_building_info"] = map[string]any{
+			"structure_type": "standard",
+			"building_type":  "detached",
+		}
+	}
+
 	if level >= 5 {
 		data["point_geometry"] = map[string]any{
 			"type":        "Point",
@@ -358,6 +365,24 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
 	lngStr := r.URL.Query().Get("lng")
 	lat, _ := strconv.ParseFloat(latStr, 64)
 	lng, _ := strconv.ParseFloat(lngStr, 64)
+	if lat == 0 && lng == 0 {
+		targetCode := r.URL.Query().Get("code")
+		if targetCode == "" {
+			targetCode = r.URL.Query().Get("postcode")
+		}
+		if targetCode != "" {
+			if p, err := postcode.Parse(targetCode); err == nil {
+				loc := p.Location()
+				lat = loc.Latitude
+				lng = loc.Longitude
+			}
+		}
+	}
+
+	if lat == 0 && lng == 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "lat and lng query parameters or a valid reference postcode are required")
+		return
+	}
 
 	radius := 300.0
 	if radStr := r.URL.Query().Get("radius"); radStr != "" {

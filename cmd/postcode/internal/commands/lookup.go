@@ -18,6 +18,7 @@ type LookupOutputItem struct {
 	AdministrativeAddress *postcode.AdministrativeAddress `json:"administrative_address,omitempty"`
 	RecentHouseAddress    *postcode.RecentHouseAddress    `json:"recent_house_address,omitempty"`
 	BuildingUseStatus     string                          `json:"building_use_status,omitempty"`
+	OtherBuildingInfo     map[string]any                  `json:"other_building_info,omitempty"`
 	PointGeometry         *postcode.PointGeometry         `json:"point_geometry,omitempty"`
 	Error                 string                          `json:"error,omitempty"`
 }
@@ -34,17 +35,20 @@ func NewLookupCmd(v *viper.Viper) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "lookup [postcodes...]",
-		Short: "Query NIPOST gateway for graded postcode attributes (Levels 1–3)",
+		Short: "Query NIPOST gateway for graded postcode attributes (Levels 1–5)",
 		Long: `Lookup queries the official NIPOST gateway API for graded postcode attributes:
   - Level 1 (Free): Validity status (valid: true/false) and canonical format.
   - Level 2 (Commercial): Administrative boundaries, state, LGA, and street name.
   - Level 3 (Commercial): Official building use status (residential, commercial, mixed).
+  - Level 4 (Enterprise): Detailed building metadata and administrative attributes.
+  - Level 5 (Enterprise): High-precision GeoJSON point geometry and coordinates.
 
 If the gateway is unreachable or lacks an API key, setting --offline-fallback (default: true)
 will gracefully enrich the response using local reference data.`,
 		Example: `  postcode lookup EK-01-A03-FK-01 --level 1
   postcode lookup "LA 11 W06 TC 10" --level 2 -o json
-  postcode lookup FC-03-B06-AG-12 --level 3 --api-key nipost_live_...`,
+  postcode lookup FC-03-B06-AG-12 --level 3 --api-key nipost_live_...
+  postcode lookup EK-01-A03-FK-01 --level 5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			inputs, err := readInputs(cmd, args)
 			if err != nil {
@@ -158,6 +162,7 @@ will gracefully enrich the response using local reference data.`,
 					AdministrativeAddress: resp.AdministrativeAddress,
 					RecentHouseAddress:    resp.RecentHouseAddress,
 					BuildingUseStatus:     resp.BuildingUseStatus,
+					OtherBuildingInfo:     resp.OtherBuildingInfo,
 					PointGeometry:         resp.PointGeometry,
 				})
 			}
@@ -212,6 +217,9 @@ will gracefully enrich the response using local reference data.`,
 					}
 					if r.BuildingUseStatus != "" {
 						_, _ = fmt.Fprintf(w, "Building Use:  %s\n", r.BuildingUseStatus)
+					}
+					if len(r.OtherBuildingInfo) > 0 {
+						_, _ = fmt.Fprintf(w, "Building Info: %v\n", r.OtherBuildingInfo)
 					}
 					if r.PointGeometry != nil && len(r.PointGeometry.Coordinates) >= 2 {
 						_, _ = fmt.Fprintf(w, "Coordinates:   Lat %.6f, Lng %.6f\n", r.PointGeometry.Coordinates[1], r.PointGeometry.Coordinates[0])

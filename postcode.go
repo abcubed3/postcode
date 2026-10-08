@@ -131,6 +131,26 @@ func (p Postcode) BuildingUnit() string {
 	return string(p.raw[9:11])
 }
 
+// Segments returns the 5 constituent administrative segments of the postcode.
+func (p Postcode) Segments() Segments {
+	if p.IsZero() {
+		return Segments{}
+	}
+	return Segments{
+		State:    p.State(),
+		LGA:      p.LGA(),
+		District: p.District(),
+		Area:     p.Area(),
+		Unit:     p.BuildingUnit(),
+	}
+}
+
+// Disassemble returns the 5 constituent administrative segments of the postcode.
+// Alias for Segments().
+func (p Postcode) Disassemble() Segments {
+	return p.Segments()
+}
+
 // Raw returns the compact 11-character representation (e.g. "EK01A03FK01").
 func (p Postcode) Raw() string {
 	if p.IsZero() {

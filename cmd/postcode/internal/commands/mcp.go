@@ -23,8 +23,10 @@ This command enables seamless integration with Claude Desktop, Cursor, Antigravi
 and any autonomous AI agent framework supporting the MCP standard.
 
 The server exposes tools for postcode validation, diagnostic self-correction,
-location resolution, reverse geocoding, and autocomplete, as well as resources
-and prompts for Nigerian address normalization.`,
+location resolution, reverse geocoding, nearby radius search, autocomplete,
+graded gateway lookups (Levels 1–5), reference catalogs (states and LGAs),
+and segment-level assembly and disassembly, as well as resources and prompts
+for Nigerian address normalization.`,
 		Example: `  # Run in stdio mode (default for Claude Desktop, Cursor, and IDEs)
   postcode mcp
 

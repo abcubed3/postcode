@@ -55,6 +55,7 @@ func TestCLI_RootHelp(t *testing.T) {
 		"mcp",
 		"eval",
 		"version",
+		"update",
 	}
 
 	for _, sub := range expectedSubstrings {
@@ -360,6 +361,24 @@ func TestCLI_LookupValidation(t *testing.T) {
 			t.Errorf("expected Error line in output: %s", out)
 		}
 	})
+
+	t.Run("levels 4 and 5 accepted in offline mode", func(t *testing.T) {
+		out4, _, err4 := executeCmd([]string{"lookup", "--offline", "--level", "4", "EK-01-A03-FK-01", "-o", "json"}, "")
+		if err4 != nil {
+			t.Fatalf("unexpected error for level 4: %v", err4)
+		}
+		if !strings.Contains(out4, `"level": 4`) {
+			t.Errorf("expected level 4 in json output: %s", out4)
+		}
+
+		out5, _, err5 := executeCmd([]string{"lookup", "--offline", "--level", "5", "EK-01-A03-FK-01", "-o", "json"}, "")
+		if err5 != nil {
+			t.Fatalf("unexpected error for level 5: %v", err5)
+		}
+		if !strings.Contains(out5, `"level": 5`) {
+			t.Errorf("expected level 5 in json output: %s", out5)
+		}
+	})
 }
 
 func TestCLI_YAMLDeterminism(t *testing.T) {
@@ -412,7 +431,10 @@ func TestCLI_Diagnose(t *testing.T) {
 }
 
 func TestCLI_MCP(t *testing.T) {
-	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`
+	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"assemble_postcode","arguments":{"state":"LA","lga":"01","district":"W06","area":"TC","unit":"10"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_lgas","arguments":{"state":"EK"}}}`
+
 	out, errOut, err := executeCmd([]string{"mcp"}, initMsg+"\n")
 	if err != nil {
 		t.Fatalf("mcp command failed: %v", err)
@@ -422,6 +444,22 @@ func TestCLI_MCP(t *testing.T) {
 	}
 	if !strings.Contains(out, `"protocolVersion":"2024-11-05"`) {
 		t.Errorf("expected initialize response on stdout, got: %s", out)
+	}
+	if !strings.Contains(out, "LA-01-W06-TC-10") {
+		t.Errorf("expected assemble_postcode result in stdout, got: %s", out)
+	}
+	if !strings.Contains(out, "Ado Ekiti") {
+		t.Errorf("expected list_lgas result in stdout, got: %s", out)
+	}
+}
+
+func TestCLI_GoogleMapsKeyFlag(t *testing.T) {
+	out, _, err := executeCmd([]string{"coords", "--google-maps-key", "test_key", "EK-01-A03-FK-01"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error with --google-maps-key: %v", err)
+	}
+	if !strings.Contains(out, "EK-01-A03-FK-01") {
+		t.Errorf("expected coords output, got: %s", out)
 	}
 }
 
@@ -609,8 +647,3 @@ func TestCLI_OfflineMode(t *testing.T) {
 		}
 	})
 }
-
-
-
-
-

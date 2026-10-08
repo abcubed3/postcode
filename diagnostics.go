@@ -20,8 +20,8 @@ type SegmentDiagnosis struct {
 type DiagnosticReport struct {
 	Input         string             `json:"input"`
 	Valid         bool               `json:"valid"`
-	Normalized    string             `json:"normalized,omitempty"`     // Hyphenated canonical form if valid or recoverable
-	CleanLength   int                `json:"clean_length"`            // Number of alphanumeric characters found
+	Normalized    string             `json:"normalized,omitempty"` // Hyphenated canonical form if valid or recoverable
+	CleanLength   int                `json:"clean_length"`         // Number of alphanumeric characters found
 	Diagnoses     []SegmentDiagnosis `json:"diagnoses,omitempty"`
 	ActionableTip string             `json:"actionable_tip,omitempty"` // Summary recommendation for the caller/agent
 	FormatScore   float64            `json:"format_score"`             // Structural conformance score (0.0 to 100.0)

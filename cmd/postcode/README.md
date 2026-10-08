@@ -451,20 +451,25 @@ cat raw_orders.csv | postcode batch --input - --output - --column shipping_code 
 
 Performs live verification against the official NIPOST API (`api.postcode.gov.ng`).
 
-Supports three levels of verification via `-l` / `--level`:
+Supports graded verification levels via `-l` / `--level`:
 - **Level 1 (Default)**: Postal validation and administrative assignment (free/public).
 - **Level 2**: Detailed administrative address and street attributes (commercial).
-- **Level 3**: Building use classification (residential, commercial, mixed, etc. — official commercial maximum).
+- **Level 3**: Building use classification (residential, commercial, mixed, etc. — official commercial standard).
+- **Level 4**: Building metadata and structural classification (enterprise/restricted).
+- **Level 5**: High-precision GeoJSON point geometry and coordinates (enterprise/restricted).
 
 > [!NOTE]
-> Standard commercial API keys are strictly capped at Level 3. Commercial lookups do not have access to Level 4 or Level 5. Building coordinate resolution (`coords --online` / `map --online`) utilizes NIPOST's public cadastral discovery layer and local caching.
+> Standard commercial API keys typically support Levels 1–3, while Levels 4–5 are available for enterprise cadastral partnerships. Building coordinate resolution (`coords --online` / `map --online`) utilizes NIPOST's spatial endpoints and local cadastral caching.
 
 ```bash
-# Basic lookup
+# Basic validation lookup
 postcode lookup EK-01-A03-FK-01 --level 1
 
 # Comprehensive cadastral verification
 postcode lookup EK-01-A03-FK-01 --level 3 -o json
+
+# Enterprise point geometry lookup
+postcode lookup EK-01-A03-FK-01 --level 5 -o json
 ```
 
 > [!TIP]
@@ -625,11 +630,24 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `validate_postcode`: Validates 11-character grammar, format, and state code.
 - `diagnose_postcode`: In-depth segment-by-segment analysis with suggestions.
 - `resolve_location`: Resolves coordinates, administrative metadata, and Google Maps URL.
-- `reverse_geocode`: Snaps latitude/longitude to the nearest postcode unit.
-- `search_nearby`: Searches for active units within a radius (default 300m).
+- `reverse_geocode`: Snaps latitude/longitude to the nearest postcode unit (online or offline).
+- `search_nearby`: Searches for active units within a radius (default 300m, online or offline).
 - `autocomplete_postcode`: Segment-aware autocomplete suggestions.
-- `lookup_postcode`: Graded official gateway query (L1 free, L2/L3 commercial).
+- `lookup_postcode`: Graded official gateway query (Levels 1–5: validity, address, building use, metadata, geometry).
 - `list_states`: Returns directory of all 36 States + FCT with capitals and centroids.
+- `list_lgas`: Returns all Local Government Areas (LGAs) for a given state code.
+- `assemble_postcode`: Assembles 5 administrative segments into canonical, display, and compact postcodes with automatic zero-padding.
+- `disassemble_postcode`: Deconstructs a postcode into its 5 constituent administrative segments.
+
+#### Available Resources via MCP
+- `postcode://states`: Comprehensive directory of all 36 Nigerian states and FCT.
+- `postcode://lgas`: Complete registry of Local Government Areas and centroid coordinates.
+- `postcode://lgas/{state}`: State-scoped LGA directory (e.g. `postcode://lgas/LA`, `postcode://lgas/FC`).
+- `postcode://grammar`: Official NIPOST 11-digit alphanumeric postcode grammar specification.
+
+#### Available Prompts via MCP
+- `normalize-nigerian-address`: Step-by-step instructions for extracting and normalizing raw addresses to postcodes.
+- `assemble-nigerian-postcode`: Guidance for constructing and verifying 11-digit postcodes from individual administrative segments.
 
 ---
 

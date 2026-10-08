@@ -417,4 +417,3 @@ func ReverseCoordinatesOffline(lat, lng, maxDistanceM float64) *ReverseResponse 
 	}
 	return res
 }
-

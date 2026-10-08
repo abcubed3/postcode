@@ -141,7 +141,6 @@ func (l Location) GoogleMapsURL() string {
 	return ""
 }
 
-
 // GoogleMapsDirectionsURL returns a Google Maps navigation/directions URL to this location.
 // Format: https://www.google.com/maps/dir/?api=1&destination=lat,lng
 func (l Location) GoogleMapsDirectionsURL() string {
