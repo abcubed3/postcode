@@ -238,21 +238,21 @@ func StateLGAs(state string) []NamedCode {
 
 // stateAliases maps common Nigerian state aliases, ISO codes, and abbreviations to their 2-letter NIPOST code.
 var stateAliases = map[string]string{
-	"FCT":        "FC",
-	"ABUJA":      "FC",
-	"ABJ":        "FC",
-	"FCT ABUJA":  "FC",
-	"F.C.T":      "FC",
-	"F.C.T.":     "FC",
-	"BE":         "BN", // Common ISO 3166-2 / user confusion for Benue (BN)
-	"PH":         "RI",
-	"PHC":        "RI",
+	"FCT":           "FC",
+	"ABUJA":         "FC",
+	"ABJ":           "FC",
+	"FCT ABUJA":     "FC",
+	"F.C.T":         "FC",
+	"F.C.T.":        "FC",
+	"BE":            "BN", // Common ISO 3166-2 / user confusion for Benue (BN)
+	"PH":            "RI",
+	"PHC":           "RI",
 	"PORT HARCOURT": "RI",
-	"AKWA-IBOM":  "AK",
-	"CROSS-RIVER": "CR",
-	"NASSARAWA":  "NA",
-	"ZAMFERA":    "ZA",
-	"PLATUE":     "PL",
+	"AKWA-IBOM":     "AK",
+	"CROSS-RIVER":   "CR",
+	"NASSARAWA":     "NA",
+	"ZAMFERA":       "ZA",
+	"PLATUE":        "PL",
 }
 
 // LookupState resolves a Nigerian state record by its 2-letter NIPOST code, full state name,

@@ -10,13 +10,15 @@
   - **Level 2 (Commercial)**: Administrative address (State, LGA, District, Area) and street address.
   - **Level 3 (Commercial)**: Full building use classification (residential, commercial, mixed). Standard commercial keys are strictly capped at Level 3.
 - **Offline Resolution**: `postcode.ResolveLocation()` and `p.Location()` resolve coordinates and Google Maps URLs locally using embedded reference centroids without network calls.
+- **Shareable & Printable QR Codes**: Built-in, dependency-free ISO/IEC 18004 QR encoder (`postcode.GenerateQR`, `p.QR()`) and CLI (`postcode qr`) rendering SVG, PNG, HTML labels, base64 Data URIs, and terminal output.
 - **AI Agent Native**: Native Model Context Protocol (MCP) server (`postcode mcp`), standard LLM tool schemas (`DefaultAgentTools()`), and actionable error diagnostics (`Diagnose()`).
 
 ## Quick Navigation & Full Context
 - [Full LLM Specification & API Reference](llms-full.txt): Complete signatures, schemas, MCP config, and examples.
 - [Model Context Protocol (MCP)](llms-full.txt#model-context-protocol-mcp): How to connect to Claude Desktop, Cursor, and Antigravity IDE.
 - [Agent Tools & Function Calling](llms-full.txt#ai-agent-tools-and-function-calling): Ready-to-use schemas for OpenAI, Anthropic, Gemini, and LangChainGo.
+- [Shareable & Printable QR Codes](llms-full.txt#shareable--printable-qr-codes): Standalone pure Go QR generation, payloads, and printable labels.
 - [Diagnostics & Self-Correction](llms-full.txt#diagnostics-and-self-correction): Actionable segment-level error detection and suggestion engine.
 - [Core Go SDK Usage](llms-full.txt#core-sdk-reference): Client initialization, lookups, reverse geocoding, autocomplete.
-- [CLI Reference](llms-full.txt#cli-command-reference): Command syntax for `validate`, `diagnose`, `mcp`, `lookup`, `map`, and `serve`.
+- [CLI Reference](llms-full.txt#cli-command-reference): Command syntax for `validate`, `diagnose`, `qr`, `mcp`, `lookup`, `map`, and `serve`.
 - [Agent Skill Bundle (SKILL.md)](skills/nipost-postcode/SKILL.md): Standard operating procedures, quota escalation protocol, address disambiguation, and self-healing loops.

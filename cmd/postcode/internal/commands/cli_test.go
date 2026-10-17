@@ -2,6 +2,8 @@ package commands_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -716,5 +718,56 @@ func TestCLI_NewFeatures(t *testing.T) {
 			t.Errorf("expected repaired canonical EK-01-A03-FK-01 in batch output, got: %s", out)
 		}
 	})
-}
 
+	t.Run("qr command terminal, svg, label, file output, and json", func(t *testing.T) {
+		// 1. Default terminal output
+		termOut, _, err := executeCmd([]string{"qr", "EK 01 A03 FK 01"}, "")
+		if err != nil {
+			t.Fatalf("qr terminal failed: %v", err)
+		}
+		if !strings.Contains(termOut, "EK-01-A03-FK-01") || !strings.ContainsAny(termOut, "▀▄█") {
+			t.Errorf("expected postcode and Unicode QR blocks in terminal output, got: %s", termOut)
+		}
+
+		// 2. Printable label SVG
+		svgOut, _, err := executeCmd([]string{"qr", "LA-11-W06-TC-10", "--label", "--render", "label-svg", "--title", "CUSTOM LABEL"}, "")
+		if err != nil {
+			t.Fatalf("qr --label --render label-svg failed: %v", err)
+		}
+		if !strings.Contains(svgOut, "<svg ") || !strings.Contains(svgOut, "CUSTOM LABEL") || !strings.Contains(svgOut, "LA-11-W06-TC-10") {
+			t.Errorf("expected printable SVG card with title and postcode, got: %s", svgOut[:min(len(svgOut), 120)])
+		}
+
+		// 3. JSON output with google-maps payload
+		jsonOut, _, err := executeCmd([]string{"qr", "FC-03-B06-AG-12", "--payload", "google-maps", "--json"}, "")
+		if err != nil {
+			t.Fatalf("qr --payload google-maps --json failed: %v", err)
+		}
+		if !strings.Contains(jsonOut, `"payload_type": "google-maps"`) || !strings.Contains(jsonOut, `"data_uri": "data:image/png;base64,`) {
+			t.Errorf("expected google-maps payload and PNG data_uri in JSON output, got: %s", jsonOut)
+		}
+
+		// 4. File export (.png, .svg, .html) with automatic extension detection
+		tmpDir := t.TempDir()
+		pngPath := filepath.Join(tmpDir, "badge.png")
+		if _, _, err := executeCmd([]string{"qr", "EK-01-A03-FK-01", "--label", "--out", pngPath}, ""); err != nil {
+			t.Fatalf("qr --out badge.png failed: %v", err)
+		}
+		if stat, err := os.Stat(pngPath); err != nil || stat.Size() == 0 {
+			t.Errorf("expected non-empty PNG file at %s", pngPath)
+		}
+
+		htmlPath := filepath.Join(tmpDir, "card.html")
+		if _, _, err := executeCmd([]string{"qr", "EK-01-A03-FK-01", "--out", htmlPath}, ""); err != nil {
+			t.Fatalf("qr --out card.html failed: %v", err)
+		}
+		if htmlBytes, err := os.ReadFile(htmlPath); err != nil || !strings.Contains(string(htmlBytes), "window.print()") {
+			t.Errorf("expected printable HTML file at %s", htmlPath)
+		}
+
+		// 5. Invalid postcode should error
+		if _, _, err := executeCmd([]string{"qr", "INVALID_CODE"}, ""); err == nil {
+			t.Errorf("expected error for invalid postcode in qr command")
+		}
+	})
+}

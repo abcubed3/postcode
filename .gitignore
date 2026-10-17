@@ -31,3 +31,5 @@ coverage.html
 *.notes.txt
 
 output/
+demo/
+pitch/

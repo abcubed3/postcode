@@ -38,9 +38,9 @@ When executing tasks, pick the most appropriate tool surface:
 
 | Use Case / Environment | Recommended Tool | Interface & Method |
 | :--- | :--- | :--- |
-| **Interactive LLM / IDE Session** *(Claude, Cursor, Antigravity)* | **MCP Server** | Tools: `validate_postcode`, `lookup_postcode`, `reverse_geocode`, `diagnose_postcode` |
-| **Go Codebases & Backend Services** | **Go SDK** (`postcode`) | `github.com/abcubed3/postcode` (zero-allocation `postcode.Parse`, `client.Lookup`) |
-| **Data Cleaning, CSV ETL, Shell Scripts** | **CLI** (`postcode`) | `postcode batch`, `postcode validate`, `postcode coords`, `postcode reverse` |
+| **Interactive LLM / IDE Session** *(Claude, Cursor, Antigravity)* | **MCP Server** | Tools: `validate_postcode`, `lookup_postcode`, `reverse_geocode`, `diagnose_postcode`, `generate_postcode_qr` |
+| **Go Codebases & Backend Services** | **Go SDK** (`postcode`) | `github.com/abcubed3/postcode` (zero-allocation `postcode.Parse`, `client.Lookup`, `postcode.GenerateQR`) |
+| **Data Cleaning, CSV ETL, Shell Scripts** | **CLI** (`postcode`) | `postcode batch`, `postcode validate`, `postcode coords`, `postcode qr` |
 | **Browser / Node.js / Cloudflare Workers** | **WebAssembly Engine** | `wasm/postcode.wasm` via `wasm/index.js` (offline zero-latency execution) |
 
 ---
@@ -146,6 +146,9 @@ postcode nearby --code "LA-08-A86-RG-01" --radius 200
 
 # High-throughput CSV cleaning (10,000+ rows/sec)
 postcode batch input_addresses.csv --column postcode --out cleaned.csv --workers 8
+
+# Generate shareable QR code or print-ready shipping label badge
+postcode qr "EK-01-A03-FK-01" --label --out label.svg
 ```
 
 ### C. MCP Tool Calling
@@ -166,6 +169,16 @@ When connected to the `postcode` MCP server:
   "name": "resolve_location",
   "arguments": {
     "code": "LA-11-W06-TC-10"
+  }
+}
+
+// Generate shareable / printable QR code
+{
+  "name": "generate_postcode_qr",
+  "arguments": {
+    "code": "EK-01-A03-FK-01",
+    "format": "svg",
+    "label": true
   }
 }
 ```

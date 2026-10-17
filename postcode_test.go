@@ -328,3 +328,23 @@ func TestPostcode_NewCoreMethods(t *testing.T) {
 		}
 	}
 }
+
+func TestNDPAMaskingAndRedaction(t *testing.T) {
+	p := MustParse("EK-01-A03-FK-01")
+	if got := p.Masked(); got != "EK-01-A03-FK-**" {
+		t.Errorf("p.Masked() = %q, want 'EK-01-A03-FK-**'", got)
+	}
+	if got := p.AreaPrefix(); got != "EK-01-A03-FK" {
+		t.Errorf("p.AreaPrefix() = %q, want 'EK-01-A03-FK'", got)
+	}
+
+	raw := "Deliver to EK-01-A03-FK-01 beside Shoprite, call 08031234567 or email buyer@example.ng (BVN 22345678901)"
+	red := RedactPII(raw)
+	if len(red.MaskedPostcodes) != 1 || red.MaskedPostcodes[0] != "EK-01-A03-FK-**" {
+		t.Errorf("unexpected MaskedPostcodes: %+v", red.MaskedPostcodes)
+	}
+	if red.PIIRedactedCount < 4 {
+		t.Errorf("expected at least 4 PII redactions (unit, phone, email, nin/bvn), got %d (%+v)", red.PIIRedactedCount, red)
+	}
+}
+

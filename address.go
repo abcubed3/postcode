@@ -95,7 +95,7 @@ var (
 	}
 
 	// landmarkKeywords identifies Nigerian landmark anchor phrases.
-	landmarkRegex = regexp.MustCompile(`(?i)\b((?:opposite|beside|near|behind|close to|after|adjacent|under|back of|in front of)\s+[^,;]+)` )
+	landmarkRegex = regexp.MustCompile(`(?i)\b((?:opposite|beside|near|behind|close to|after|adjacent|under|back of|in front of)\s+[^,;]+)`)
 
 	// streetRegex identifies street names and house numbers.
 	streetRegex = regexp.MustCompile(`(?i)((?:(?:no\.?|plot|flat|house|blk|block)\s*\d+[a-z]?[\s,]+)?[a-z0-9\.\-\s]{2,40}?\b(?:street|st|road|rd|way|avenue|ave|crescent|close|drive|boulevard|expressway|lane)\b)`)

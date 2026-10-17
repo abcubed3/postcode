@@ -87,6 +87,9 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	extractCmd := NewExtractCmd(v)
 	extractCmd.GroupID = "offline"
 
+	qrCmd := NewQRCmd(v)
+	qrCmd.GroupID = "offline"
+
 	lookupCmd := NewLookupCmd(v)
 	lookupCmd.GroupID = "gateway"
 
@@ -136,6 +139,7 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		formatCmd,
 		coordsCmd,
 		mapCmd,
+		qrCmd,
 		assembleCmd,
 		disassembleCmd,
 		extractCmd,

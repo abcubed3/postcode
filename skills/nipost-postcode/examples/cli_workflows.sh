@@ -46,3 +46,8 @@ echo "=== 6. High-Throughput Batch Processing ==="
 echo "=== 7. Starting the MCP Server ==="
 # Launch stdio MCP server for Claude Desktop / Cursor / Antigravity
 # POSTCODE_API_KEY="your-key" postcode mcp
+
+echo "=== 8. Shareable & Printable QR Codes ==="
+# Generate terminal preview and printable NIPOST delivery badge SVG
+postcode qr "EK-01-A03-FK-01" --label --out ekiti-label.svg
+postcode qr "LA-11-W06-TC-10" --payload directions

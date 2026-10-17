@@ -208,6 +208,34 @@ async function run() {
   assert(dist.distance_km > 150 && dist.distance_km < 350);
   console.log('✔ repair(), extractAddress(), & distanceMeters() passed');
 
+  // 21. QR Code Generation (SVG, Printable Label, PNG Data URI, Terminal, and MCP Tool)
+  const qrDefault = postcode.generateQR('EK 01 A03 FK 01');
+  assert.strictEqual(qrDefault.valid, true);
+  assert.strictEqual(qrDefault.postcode, 'EK-01-A03-FK-01');
+  assert.strictEqual(qrDefault.payload, 'EK-01-A03-FK-01');
+  assert(qrDefault.svg.startsWith('<svg '));
+  assert(qrDefault.data_uri.startsWith('data:image/png;base64,'));
+  assert(qrDefault.terminal.length > 0);
+
+  const qrLabel = postcode.qr('LA-11-W06-TC-10', {
+    payload: 'google-maps',
+    includeLabel: true,
+    title: 'NIPOST WAYBILL',
+  });
+  assert.strictEqual(qrLabel.valid, true);
+  assert.strictEqual(qrLabel.payload_type, 'google-maps');
+  assert(qrLabel.svg.includes('NIPOST WAYBILL'));
+  assert(qrLabel.printable_html.includes('<!DOCTYPE html>'));
+
+  const qrTool = await postcode.executeTool('generate_postcode_qr', {
+    code: 'FC-03-B06-AG-12',
+    include_label: true,
+  });
+  assert.strictEqual(qrTool.valid, true);
+  assert.strictEqual(qrTool.postcode, 'FC-03-B06-AG-12');
+  assert(qrTool.svg.startsWith('<svg '));
+  console.log('✔ generateQR(), qr(), & executeTool("generate_postcode_qr") passed');
+
   console.log('\nAll parity verification tests passed successfully! 🎉');
 }
 

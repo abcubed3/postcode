@@ -13,6 +13,7 @@ A high-performance, zero-allocation Go client library for Nigeria's National Dig
 - **Resilient Transport**: Production-tuned HTTP transport with exponential backoff, full jitter, `Retry-After` header support, and safe connection draining.
 - **Pluggable Observability**: Zero external dependencies in the core module, with an optional OpenTelemetry module (`github.com/abcubed3/postcode/otelpostcode`).
 - **AI & Agent Native**: Built-in Model Context Protocol (MCP) server (`postcode mcp`), standard LLM function calling schemas (Gemini, OpenAI, Anthropic), and actionable diagnostic self-correction (`postcode.Diagnose`).
+- **Shareable & Printable QR Codes**: Built-in, dependency-free ISO/IEC 18004 QR encoder (`postcode.GenerateQR`) rendering SVG, PNG, Base64 Data URIs, terminal Unicode, and print-ready NIPOST postcode labels.
 
 ## Installation
 
@@ -103,6 +104,16 @@ func main() {
         fmt.Printf("Parsed: %s (State: %s, LGA: %s, Unit: %s)\n",
             p.Formatted(), p.State(), p.LGA(), p.BuildingUnit())
     }
+
+    // 6. Generate shareable & printable QR code (pure Go, zero CGO/dependencies)
+    qr, err := postcode.GenerateQR("EK-01-A03-FK-01", postcode.QROptions{
+        Payload: postcode.QRPayloadPostcode,
+        Level:   postcode.QRLevelM,
+    })
+    if err == nil {
+        _ = qr.SaveSVG("ekiti-postcode.svg")
+        fmt.Println(qr.Terminal())
+    }
 }
 ```
 
@@ -113,8 +124,11 @@ func main() {
 | `postcode.GoogleMapsURL(code)` | Offline / Local | Generates direct universal Google Maps URL for an 11-digit postcode. |
 | `postcode.Coordinates(code)` | Offline / Local | Returns `(latitude, longitude)` for an 11-digit postcode string. |
 | `postcode.ResolveLocation(code)` | Offline / Local | Resolves `Location` struct (lat/long, precision, Google Maps/Apple/OSM URLs). |
+| `postcode.GenerateQR(code, opts...)` | Offline / Local | Generates shareable & printable ISO/IEC 18004 QR codes (SVG, PNG, Label SVG, HTML, Terminal). |
+| `p.QR(opts...)` | Method on `Postcode` | Converts a parsed `Postcode` into a `QRCode` with SVG, PNG, Data URI, and terminal outputs. |
 | `p.GoogleMapsURL()` | Method on `Postcode` | Zero-allocation / sub-microsecond Google Maps URL generation. |
 | `client.ResolveLocation(ctx, code)` | Gateway + Geocoding | Multi-stage pipeline: NIPOST Level 1–3 + Google Maps/Nominatim + auto disk caching. |
+| `client.GenerateQR(ctx, code, opts...)` | Gateway + Local QR | Enriches address metadata online and renders a printable/shareable QR code. |
 | `client.Lookup(ctx, code, level)` | `GET /v1/lookup` | Graded postcode lookup (Levels 1–3 cumulative per official spec). |
 | `client.Autocomplete(ctx, q)` | `GET /v1/search/autocomplete` | Segment-aware suggestions for partial input. |
 | `client.Nearby(ctx, params)` | `GET /v1/search/nearby` | Units within a radius (default 300m) of coordinates or reference postcode. |
@@ -123,6 +137,84 @@ func main() {
 | `client.ReverseCoordinates(ctx, lat, lng, maxDist)` | Convenience Helper | Snaps lat/lng directly to nearest active unit. |
 | `client.Assemble(ctx, segs)` | `POST /v1/assembly/assemble` | Assembles 5 segments into canonical format. |
 | `client.Disassemble(ctx, code)` | `GET /v1/assembly/disassemble` | Decomposes code into its 5 administrative segments. |
+
+## Shareable & Printable QR Codes
+
+Every validated Nigerian digital postcode can be converted into a high-density, printable, or shareable **ISO/IEC 18004 QR code** with **zero external Go dependencies** and zero CGO.
+
+### 1. Multi-Format Rendering & File Helpers
+
+```go
+qr, err := postcode.GenerateQR("LA-11-W06-TC-10", postcode.QROptions{
+    Payload:         postcode.QRPayloadGoogleMaps, // Encodes direct navigation link
+    Size:            300,                          // Pixel/SVG dimension
+    ForegroundColor: "#0B6623",                    // NIPOST Nigerian Postal Green
+    BackgroundColor: "#FFFFFF",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// In-memory renderers
+svgData     := qr.SVG()                                  // Scalable Vector Graphics string
+pngBytes, _ := qr.PNG()                                  // Compressed PNG image bytes
+htmlPage    := qr.PrintableHTML()                        // Self-contained, print-styled HTML badge
+termView    := qr.Terminal()                             // Unicode half-block characters for stdout
+dataURI, _  := qr.DataURI()                              // data:image/png;base64,...
+
+// Direct file export helpers
+_ = qr.SaveSVG("lagos-postcode.svg")
+_ = qr.SavePNG("lagos-postcode.png")
+_ = qr.SaveHTML("lagos-label.html")
+```
+
+### 2. Print-Ready NIPOST Delivery Badges & Labels
+
+Generate professional delivery labels with the official NIPOST green badge header, human-readable postcode segments, and physical locality description for package shipping and building signage:
+
+```go
+qr, _ := postcode.GenerateQR("EK-01-A03-FK-01", postcode.QROptions{
+    IncludeLabel: true,
+    Title:        "NIPOST DIGITAL POSTCODE",
+    Subtitle:     "NTA Road, Back of Fabian Hotel, Ado Ekiti",
+})
+
+// Generates an SVG shipping label with clear typography and quiet zones
+labelSVG := qr.LabelSVG()
+_ = qr.SaveSVG("ekiti-delivery-badge.svg")
+```
+
+### 3. Payload Options
+
+| Payload Option | Value / Format | Example Output / URL |
+| :--- | :--- | :--- |
+| `postcode.QRPayloadPostcode` *(Default)* | Hyphenated 11-char | `EK-01-A03-FK-01` |
+| `postcode.QRPayloadCompact` | Unspaced 11-char | `EK01A03FK01` |
+| `postcode.QRPayloadSpaced` | 5 spaced segments | `EK 01 A03 FK 01` |
+| `postcode.QRPayloadGoogleMaps` | Web Maps search URL | `https://maps.google.com/?q=7.621100,5.221500` |
+| `postcode.QRPayloadDirections` | Direct navigation URL | `https://www.google.com/maps/dir/?api=1&destination=7.621100,5.221500` |
+| `postcode.QRPayloadAppleMaps` | Apple Maps URL | `https://maps.apple.com/?q=...` |
+| `postcode.QRPayloadOSM` | OpenStreetMap link | `https://www.openstreetmap.org/?mlat=...` |
+| `postcode.QRPayloadGeoURI` | RFC 5870 `geo:` URI | `geo:7.621100,5.221500` |
+| `postcode.QRPayloadJSON` | Machine-readable JSON | `{"postcode":"EK-01-A03-FK-01","state":"EK",...}` |
+| `postcode.QRPayloadText` | Rich address text | `"EK-01-A03-FK-01 (Ekiti, Ado Ekiti)"` |
+
+### 4. CLI QR Generation
+
+```bash
+# Print QR code directly in the terminal
+postcode qr EK-01-A03-FK-01
+
+# Save SVG and PNG
+postcode qr LA-11-W06-TC-10 --render svg --out ikeja.svg
+postcode qr LA-11-W06-TC-10 --render png --out ikeja.png
+
+# Generate a printable shipping label badge and preview in browser
+postcode qr EK-01-A03-FK-01 --label --out label.svg --open
+
+# Encode direct turn-by-turn navigation for delivery couriers
+postcode qr FC-03-B06-AG-12 --payload directions --out abuja-nav.svg
+```
 
 ## Command-Line Interface (`postcode`)
 
@@ -140,6 +232,7 @@ go install github.com/abcubed3/postcode/cmd/postcode@latest
 - **Segment Parsing**: `postcode parse "LA 11 W06 TC 10" -o json` (extracts State, LGA, District, Area, Unit, Zone).
 - **Format Normalization**: `cat dirty.txt | postcode format --style canonical` (Unix pipe friendly).
 - **Geocoding & Maps**: `postcode map EK-01-A03-FK-01` (generates Google Maps, Apple Maps, OSM URLs).
+- **Shareable & Printable QR Codes**: `postcode qr EK-01-A03-FK-01 --label --out label.svg` (renders terminal Unicode, SVG, PNG, Data URI, or printable NIPOST badges).
 - **Batch CSV Processing**: `postcode batch --input orders.csv --output enriched.csv --column postcode` (processes >350k rows/sec offline).
 - **Gateway Operations**: `postcode lookup`, `postcode autocomplete`, `postcode nearby`, `postcode reverse`, and `postcode status`.
 - **Model Context Protocol**: `postcode mcp` (exposes stdio MCP server for Claude Desktop, Cursor, Antigravity IDE).

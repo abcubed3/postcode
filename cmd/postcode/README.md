@@ -145,6 +145,10 @@ postcode nearby LA-08-A86-RG-01 --radius 250
 
 # 11. Start a local zero-latency mock NIPOST server for testing
 postcode serve --port 2340
+
+# 12. Generate a shareable or printable postcode QR code (Terminal, SVG, PNG, HTML Label)
+postcode qr EK-01-A03-FK-01
+postcode qr LA-11-W06-TC-10 --label --out label.svg
 ```
 
 ---
@@ -638,6 +642,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `list_lgas`: Returns all Local Government Areas (LGAs) for a given state code.
 - `assemble_postcode`: Assembles 5 administrative segments into canonical, display, and compact postcodes with automatic zero-padding.
 - `disassemble_postcode`: Deconstructs a postcode into its 5 constituent administrative segments.
+- `generate_postcode_qr`: Generates printable and shareable QR codes (SVG, PNG, Data URI, HTML Label, or Terminal) for any 11-digit postcode.
 
 #### Available Resources via MCP
 - `postcode://states`: Comprehensive directory of all 36 Nigerian states and FCT.
@@ -723,6 +728,66 @@ To configure the CLI to **always pull from NIPOST** without having to pass `--on
    ```
 
 When online mode is enabled, `postcode coords` and `postcode map` automatically contact NIPOST for exact building point geometry and automatically persist the coordinates to your local offline cache!
+
+---
+
+### 18. Shareable & Printable QR Codes (`qr`)
+
+Generate scan-ready, high-density **ISO/IEC 18004 QR codes** directly from the command line for package shipping labels, building signage, delivery waybills, invoices, or instant courier mobile navigation.
+
+Operates with zero external dependencies, zero CGO, and complete offline capability.
+
+```bash
+# Print QR code directly in your terminal using high-contrast half-blocks
+postcode qr EK-01-A03-FK-01
+
+# Save scalable vector graphic (SVG) or compressed PNG
+postcode qr LA-11-W06-TC-10 --render svg --out ikeja.svg
+postcode qr LA-11-W06-TC-10 --render png --out ikeja.png
+
+# Generate a print-ready NIPOST delivery badge label (SVG)
+postcode qr EK-01-A03-FK-01 --label --out label.svg
+
+# Open directly in default web browser or desktop image viewer
+postcode qr FC-03-B06-AG-12 --label --out label.svg --open
+
+# Encode direct turn-by-turn Google Maps navigation for dispatch couriers
+postcode qr LA-11-W06-TC-10 --payload directions --out dispatch.svg
+
+# Pull verified street address from NIPOST online gateway and embed into shipping label
+postcode qr EK-01-A03-FK-01 --online --label --out verified_shipping_label.svg
+```
+
+#### Command Flags & Options
+
+| Flag | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--payload` | `-p` | `canonical` | Encoded payload format: `canonical`, `compact`, `spaced`, `google-maps`, `directions`, `apple-maps`, `osm`, `geo`, `json`, `text` |
+| `--render` | `-r` | `terminal` | Output rendering format: `terminal`, `svg`, `png`, `data-uri`, `svg-data-uri`, `html`, `ascii` |
+| `--label` | `-l` | `false` | Render a styled, print-ready NIPOST delivery label badge with human-readable text and quiet zones |
+| `--out` | `-o` | `""` | Output file path (e.g. `label.svg`, `qr.png`, `badge.html`). Automatically sets `--render` if inferred from file extension |
+| `--title` | | `"NIPOST DIGITAL POSTCODE"` | Custom label title header |
+| `--subtitle` | | `""` | Custom label subtitle or address description |
+| `--size` | `-s` | `256` | Image width/height in pixels for PNG rendering, or label badge width for SVG/HTML |
+| `--level` | | `M` | QR error correction level: `L` (~7%), `M` (~15%), `Q` (~25%), `H` (~30%) |
+| `--fg` | | `"#000000"` | Module foreground color (hex code, e.g. `"#0B6623"` for NIPOST green) |
+| `--bg` | | `"#FFFFFF"` | Background color (hex code) |
+| `--quiet-zone`| | `4` | Number of quiet zone modules surrounding the matrix |
+| `--invert` | | `false` | Invert colors (light foreground on dark background) |
+| `--open` | | `false` | Automatically open generated file in the default system browser or viewer |
+| `--online` | | `false` | Query NIPOST online gateway to enrich label subtitle with verified street and building name |
+
+#### Payload Formats
+- `canonical` *(Default)*: Canonical hyphenated 11-digit postcode (e.g. `LA-11-W06-TC-10`).
+- `compact`: Unhyphenated 11-character string (`LA11W06TC10`).
+- `spaced`: 5 spaced segments (`LA 11 W06 TC 10`).
+- `google-maps`: Universal web map search URL (`https://maps.google.com/?q=...`).
+- `directions`: Direct mobile turn-by-turn routing destination link (`https://www.google.com/maps/dir/?api=1&destination=...`).
+- `apple-maps`: Apple Maps location URI (`https://maps.apple.com/?q=...`).
+- `osm`: OpenStreetMap pinpoint link (`https://www.openstreetmap.org/?mlat=...`).
+- `geo`: RFC 5870 standard mobile geo URI (`geo:lat,lng`).
+- `json`: Machine-readable JSON object with postcode, state, LGA, and centroid coordinates.
+- `text`: Human-readable label string with postcode and locality.
 
 ---
 

@@ -288,6 +288,53 @@ export interface StateRecord {
   zone: string;
 }
 
+export interface QROptions {
+  payload?: 'postcode' | 'compact' | 'spaced' | 'google-maps' | 'directions' | 'apple-maps' | 'osm' | 'geo' | 'json' | 'text';
+  level?: 'L' | 'M' | 'Q' | 'H';
+  size?: number;
+  quietZone?: number;
+  quiet_zone?: number;
+  foregroundColor?: string;
+  foreground_color?: string;
+  backgroundColor?: string;
+  background_color?: string;
+  includeLabel?: boolean;
+  include_label?: boolean;
+  title?: string;
+  subtitle?: string;
+  invertAscii?: boolean;
+  invert_ascii?: boolean;
+}
+
+export interface QRResult {
+  valid: boolean;
+  input?: string;
+  postcode?: string;
+  compact?: string;
+  state_code?: string;
+  state_name?: string;
+  lga_code?: string;
+  lga_name?: string;
+  latitude?: number;
+  longitude?: number;
+  google_maps_url?: string;
+  payload?: string;
+  payload_type?: string;
+  level?: 'L' | 'M' | 'Q' | 'H';
+  version?: number;
+  dimension?: number;
+  include_label?: boolean;
+  svg?: string;
+  matrix_svg?: string;
+  label_svg?: string;
+  printable_html?: string;
+  data_uri?: string;
+  svg_data_uri?: string;
+  terminal?: string;
+  ascii?: string;
+  error?: string;
+}
+
 export interface PostcodeEngine {
   // --- 1. Core Offline (Sync) ---
   validate(code: string): ValidationResult;
@@ -296,6 +343,8 @@ export interface PostcodeEngine {
   repair(code: string): RepairResult;
   extractAddress(address: string): AddressExtraction;
   distanceMeters(codeA: string, codeB: string): DistanceResult;
+  generateQR(code: string, optionsOrPayload?: QROptions | QROptions['payload']): QRResult;
+  qr(code: string, optionsOrPayload?: QROptions | QROptions['payload']): QRResult;
   parse(code: string): ParsedPostcode;
   format(code: string, style?: 'canonical' | 'compact' | 'spaced' | 'hyphenated' | 'slug'): string;
   assemble(segments: { state: string; lga: string; district: string; area: string; unit: string }): AssembledPostcode;

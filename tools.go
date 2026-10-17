@@ -265,6 +265,44 @@ func DefaultAgentTools() []ToolDef {
 				"required": []string{"from_code", "to_code"},
 			},
 		},
+		{
+			Name:        "generate_postcode_qr",
+			Description: "Converts a valid 11-character Nigerian postcode into a shareable and printable QR code (SVG, printable NIPOST label SVG, PNG base64 Data URI, and terminal Unicode blocks).",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"code": map[string]any{
+						"type":        "string",
+						"description": "Valid 11-character Nigerian postcode (e.g. 'EK-01-A03-FK-01').",
+					},
+					"payload": map[string]any{
+						"type":        "string",
+						"description": "Payload to encode when scanned: 'postcode' (default canonical string), 'compact', 'spaced', 'google-maps', 'directions', 'apple-maps', 'osm', 'geo', 'json', or 'text'.",
+					},
+					"include_label": map[string]any{
+						"type":        "boolean",
+						"description": "When true, renders a printable NIPOST postcode badge/label with the formatted postcode, State/LGA, and coordinates.",
+					},
+					"title": map[string]any{
+						"type":        "string",
+						"description": "Optional header title for printable labels (defaults to 'NIGERIA DIGITAL POSTCODE').",
+					},
+					"subtitle": map[string]any{
+						"type":        "string",
+						"description": "Optional street address or recipient subtitle for printable labels.",
+					},
+					"size": map[string]any{
+						"type":        "integer",
+						"description": "Target image width/height in pixels (default 256, or 400 with label).",
+					},
+					"level": map[string]any{
+						"type":        "string",
+						"description": "QR error correction level: 'L', 'M', 'Q', or 'H'.",
+					},
+				},
+				"required": []string{"code"},
+			},
+		},
 	}
 	sort.Slice(tools, func(i, j int) bool {
 		return tools[i].Name < tools[j].Name
@@ -571,6 +609,66 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 			}
 		}
 		return StateLGAs(args.State), nil
+
+	case "generate_postcode_qr":
+		var args struct {
+			Code            string `json:"code"`
+			Payload         string `json:"payload"`
+			IncludeLabel    bool   `json:"include_label"`
+			Title           string `json:"title"`
+			Subtitle        string `json:"subtitle"`
+			Size            int    `json:"size"`
+			Level           string `json:"level"`
+			ForegroundColor string `json:"foreground_color"`
+			BackgroundColor string `json:"background_color"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		opts := QROptions{
+			Payload:         QRPayloadType(args.Payload),
+			Level:           QRErrorCorrectionLevel(args.Level),
+			Size:            args.Size,
+			IncludeLabel:    args.IncludeLabel,
+			Title:           args.Title,
+			Subtitle:        args.Subtitle,
+			ForegroundColor: args.ForegroundColor,
+			BackgroundColor: args.BackgroundColor,
+		}
+		var qr *QRCode
+		var err error
+		if d.client != nil {
+			qr, err = d.client.GenerateQR(ctx, args.Code, opts)
+		} else {
+			qr, err = GenerateQR(args.Code, opts)
+		}
+		if err != nil {
+			return nil, err
+		}
+		dataURI, _ := qr.DataURI()
+		return map[string]any{
+			"valid":           true,
+			"postcode":        qr.Postcode,
+			"compact":         qr.Compact,
+			"state_code":      qr.StateCode,
+			"state_name":      qr.StateName,
+			"lga_code":        qr.LGACode,
+			"lga_name":        qr.LGAName,
+			"latitude":        qr.Latitude,
+			"longitude":       qr.Longitude,
+			"google_maps_url": qr.GoogleMapsURL,
+			"payload":         qr.Payload,
+			"payload_type":    qr.PayloadType,
+			"level":           qr.Level,
+			"version":         qr.Version,
+			"dimension":       qr.Dimension,
+			"include_label":   qr.IncludeLabel,
+			"svg":             qr.SVG(),
+			"label_svg":       qr.LabelSVG(),
+			"data_uri":        dataURI,
+			"svg_data_uri":    qr.SVGDataURI(),
+			"terminal":        qr.Terminal(),
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown tool name: %q", name)

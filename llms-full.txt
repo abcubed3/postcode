@@ -108,6 +108,7 @@ jsonStr, err := dispatcher.DispatchString(ctx, toolName, argsJSON)
 6. `autocomplete_postcode`: Returns segment-aware suggestions for partial postcode input.
 7. `lookup_postcode`: Queries gateway for graded attributes (Level 1 free, Level 2/3 commercial).
 8. `list_states`: Lists all 36 Nigerian states and FCT with capitals, zones, and centroids.
+9. `generate_postcode_qr`: Generates printable and shareable QR codes (SVG, PNG, Data URI, HTML label, or terminal).
 
 ---
 
@@ -165,7 +166,7 @@ func main() {
 ```
 
 ### Exposed MCP Primitives
-- **Tools**: `validate_postcode`, `diagnose_postcode`, `resolve_location`, `reverse_geocode`, `search_nearby`, `autocomplete_postcode`, `lookup_postcode`, `list_states`.
+- **Tools**: `validate_postcode`, `diagnose_postcode`, `resolve_location`, `reverse_geocode`, `search_nearby`, `autocomplete_postcode`, `lookup_postcode`, `list_states`, `generate_postcode_qr`.
 - **Resources**:
   - `postcode://states`: Directory of 36 States + FCT with capitals, zones, and centroids (`application/json`).
   - `postcode://grammar`: Official 11-digit NIPOST structural grammar specification (`text/markdown`).
@@ -203,6 +204,23 @@ lat, lng := loc.Coordinates()
 mapsURL := loc.GoogleMapsURL()
 appleURL := loc.AppleMapsURL()
 osmURL := loc.OpenStreetMapURL()
+```
+
+### Shareable & Printable QR Codes
+```go
+// Pure Go ISO/IEC 18004 QR generation (zero CGO / external deps)
+qr, err := postcode.GenerateQR("EK-01-A03-FK-01", postcode.QROptions{
+    Payload:      postcode.QRPayloadGoogleMaps,
+    IncludeLabel: true,
+    Subtitle:     "NTA Road, Ado Ekiti",
+})
+if err == nil {
+    svgStr   := qr.SVG()           // Raw SVG string
+    labelSVG := qr.LabelSVG()      // Print-ready NIPOST delivery badge SVG
+    png, _   := qr.PNG()           // Compressed PNG bytes
+    html     := qr.PrintableHTML() // Self-contained HTML label page
+    _        = qr.SaveSVG("label.svg")
+}
 ```
 
 ### Gateway Client & Graded Lookups
@@ -245,6 +263,7 @@ go install github.com/abcubed3/postcode/cmd/postcode@latest
 | `postcode format [codes...]` | Offline | Reformat (`--style canonical\|spaced\|compact`) | `cat list.txt \| postcode format` |
 | `postcode coords [codes...]` | Offline | Extract latitude/longitude coordinates | `postcode coords EK-01-A03-FK-01` |
 | `postcode map [codes...]` | Offline | Generate Google/Apple/OSM map URLs | `postcode map EK-01-A03-FK-01` |
+| `postcode qr [code]` | Offline | Generate shareable/printable QR code | `postcode qr EK-01-A03-FK-01 --label` |
 | `postcode assemble` | Offline | Combine segments into canonical code | `postcode assemble --state EK --lga 01 ...` |
 | `postcode disassemble [code]`| Offline | Decompose code into segments | `postcode disassemble EK-01-A03-FK-01` |
 | `postcode lookup [code]` | Gateway | Query live NIPOST api (`--level 1..3`) | `postcode lookup EK-01-A03-FK-01` |
@@ -289,6 +308,7 @@ Exposes `globalThis.Postcode`:
 - `Postcode.parse(code)`
 - `Postcode.resolveLocation(code)`
 - `Postcode.listStates()`
+- `Postcode.generateQR(code, opts)`
 
 ---
 

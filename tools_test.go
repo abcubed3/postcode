@@ -196,7 +196,20 @@ func TestAgentDispatcherOffline(t *testing.T) {
 		t.Errorf("expected distance_km ~218km, got %v", distMap["distance_km"])
 	}
 
-	// 16. DispatchString
+	// 16. generate_postcode_qr
+	resQR, err := dispatcher.Dispatch(ctx, "generate_postcode_qr", []byte(`{"code":"EK-01-A03-FK-01","include_label":true}`))
+	if err != nil {
+		t.Fatalf("generate_postcode_qr failed: %v", err)
+	}
+	qrMap, ok := resQR.(map[string]any)
+	if !ok || qrMap["valid"] != true || qrMap["postcode"] != "EK-01-A03-FK-01" {
+		t.Errorf("unexpected generate_postcode_qr result: %+v", resQR)
+	}
+	if svgStr, _ := qrMap["svg"].(string); !strings.HasPrefix(svgStr, "<svg ") {
+		t.Errorf("expected valid SVG string in generate_postcode_qr result")
+	}
+
+	// 17. DispatchString
 	strRes, err := dispatcher.DispatchString(ctx, "validate_postcode", []byte(`{"code":"EK-01-A03-FK-01"}`))
 	if err != nil {
 		t.Fatalf("DispatchString failed: %v", err)

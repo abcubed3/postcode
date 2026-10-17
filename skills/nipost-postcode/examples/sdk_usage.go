@@ -82,4 +82,13 @@ func main() {
 		}
 		fmt.Printf("Stream parsed valid code: %s (State: %s)\n", parsed.Formatted(), parsed.State())
 	}
+
+	// 7. Pure Go ISO/IEC 18004 QR generation (print-ready delivery labels)
+	qr, err := postcode.GenerateQR(codeStr, postcode.QROptions{
+		IncludeLabel: true,
+		Subtitle:     "Ikeja, Lagos State",
+	})
+	if err == nil {
+		fmt.Printf("Generated delivery label QR (%d bytes SVG)\n", len(qr.LabelSVG()))
+	}
 }

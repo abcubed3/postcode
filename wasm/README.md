@@ -99,6 +99,7 @@ main();
 | `normalizeSegments(segments: Segments): Segments` | Trims, uppercases, and zero-fills single-digit numeric segments. |
 | `disassemble(code: string): Segments` | Decomposes code into state, LGA, district, area, and building unit. |
 | `resolveLocation(code: string): LocationResult` | Resolves offline centroid coordinates, Google Maps, Apple Maps, and OSM links. |
+| `generateQR(code: string, options?: QROptions): QRResult` | Generates shareable & printable QR codes (SVG, Label SVG, Printable HTML, PNG Data URI, Terminal). Alias: `qr()`. |
 | `registerBuilding(record: BuildingRecord): boolean` | Registers custom building unit into local geocoding registry. |
 | `registerBuildings(records: BuildingRecord[]): number` | Bulk registers multiple building records for instant offline resolution. |
 | `listStates(): Record<string, StateRecord>` | Returns static dictionary of all 36 Nigerian States + FCT. |

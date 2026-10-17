@@ -1232,6 +1232,101 @@ func jsDistanceMeters(this js.Value, args []js.Value) any {
 	})
 }
 
+func jsGenerateQR(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return toJS(map[string]any{
+			"valid": false,
+			"error": "code parameter is required",
+		})
+	}
+	code := args[0].String()
+	var opts postcode.QROptions
+	if len(args) > 1 {
+		if args[1].Type() == js.TypeString {
+			opts.Payload = postcode.QRPayloadType(args[1].String())
+		} else if args[1].Type() == js.TypeObject {
+			obj := args[1]
+			if obj.Get("payload").Type() == js.TypeString {
+				opts.Payload = postcode.QRPayloadType(obj.Get("payload").String())
+			}
+			if obj.Get("level").Type() == js.TypeString {
+				opts.Level = postcode.QRErrorCorrectionLevel(obj.Get("level").String())
+			}
+			if obj.Get("size").Type() == js.TypeNumber {
+				opts.Size = obj.Get("size").Int()
+			}
+			if obj.Get("quietZone").Type() == js.TypeNumber {
+				opts.QuietZone = obj.Get("quietZone").Int()
+			} else if obj.Get("quiet_zone").Type() == js.TypeNumber {
+				opts.QuietZone = obj.Get("quiet_zone").Int()
+			}
+			if obj.Get("foregroundColor").Type() == js.TypeString {
+				opts.ForegroundColor = obj.Get("foregroundColor").String()
+			} else if obj.Get("foreground_color").Type() == js.TypeString {
+				opts.ForegroundColor = obj.Get("foreground_color").String()
+			}
+			if obj.Get("backgroundColor").Type() == js.TypeString {
+				opts.BackgroundColor = obj.Get("backgroundColor").String()
+			} else if obj.Get("background_color").Type() == js.TypeString {
+				opts.BackgroundColor = obj.Get("background_color").String()
+			}
+			if obj.Get("includeLabel").Type() == js.TypeBoolean {
+				opts.IncludeLabel = obj.Get("includeLabel").Bool()
+			} else if obj.Get("include_label").Type() == js.TypeBoolean {
+				opts.IncludeLabel = obj.Get("include_label").Bool()
+			}
+			if obj.Get("title").Type() == js.TypeString {
+				opts.Title = obj.Get("title").String()
+			}
+			if obj.Get("subtitle").Type() == js.TypeString {
+				opts.Subtitle = obj.Get("subtitle").String()
+			}
+			if obj.Get("invertAscii").Type() == js.TypeBoolean {
+				opts.InvertASCII = obj.Get("invertAscii").Bool()
+			} else if obj.Get("invert_ascii").Type() == js.TypeBoolean {
+				opts.InvertASCII = obj.Get("invert_ascii").Bool()
+			}
+		}
+	}
+
+	qr, err := postcode.GenerateQR(code, opts)
+	if err != nil {
+		return toJS(map[string]any{
+			"valid": false,
+			"input": code,
+			"error": err.Error(),
+		})
+	}
+
+	dataURI, _ := qr.DataURI()
+	return toJS(map[string]any{
+		"valid":           true,
+		"postcode":        qr.Postcode,
+		"compact":         qr.Compact,
+		"state_code":      qr.StateCode,
+		"state_name":      qr.StateName,
+		"lga_code":        qr.LGACode,
+		"lga_name":        qr.LGAName,
+		"latitude":        qr.Latitude,
+		"longitude":       qr.Longitude,
+		"google_maps_url": qr.GoogleMapsURL,
+		"payload":         qr.Payload,
+		"payload_type":    qr.PayloadType,
+		"level":           qr.Level,
+		"version":         qr.Version,
+		"dimension":       qr.Dimension,
+		"include_label":   qr.IncludeLabel,
+		"svg":             qr.SVG(),
+		"matrix_svg":      qr.MatrixSVG(),
+		"label_svg":       qr.LabelSVG(),
+		"printable_html":  qr.PrintableHTML(),
+		"data_uri":        dataURI,
+		"svg_data_uri":    qr.SVGDataURI(),
+		"terminal":        qr.Terminal(),
+		"ascii":           qr.ASCII(),
+	})
+}
+
 func main() {
 	postcodeObj := js.Global().Get("Object").New()
 
@@ -1242,6 +1337,8 @@ func main() {
 	postcodeObj.Set("repair", js.FuncOf(jsRepair))
 	postcodeObj.Set("extractAddress", js.FuncOf(jsExtractAddress))
 	postcodeObj.Set("distanceMeters", js.FuncOf(jsDistanceMeters))
+	postcodeObj.Set("generateQR", js.FuncOf(jsGenerateQR))
+	postcodeObj.Set("qr", js.FuncOf(jsGenerateQR))
 	postcodeObj.Set("parse", js.FuncOf(jsParse))
 	postcodeObj.Set("format", js.FuncOf(jsFormat))
 	postcodeObj.Set("assemble", js.FuncOf(jsAssemble))
