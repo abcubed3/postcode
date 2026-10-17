@@ -23,8 +23,8 @@ func TestClient_Lookup(t *testing.T) {
 		if gotKey := r.Header.Get("X-API-Key"); gotKey != "test_secret_key" {
 			t.Errorf("X-API-Key = %q, want test_secret_key", gotKey)
 		}
-		if code := r.URL.Query().Get("code"); code != "EK 01 A03 FK 01" {
-			t.Errorf("query param code = %q, want 'EK 01 A03 FK 01'", code)
+		if code := r.URL.Query().Get("code"); code != "EK-01-A03-FK-01" {
+			t.Errorf("query param code = %q, want 'EK-01-A03-FK-01'", code)
 		}
 		if level := r.URL.Query().Get("level"); level != "2" {
 			t.Errorf("query param level = %q, want '2'", level)
