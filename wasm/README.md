@@ -10,11 +10,7 @@ Zero-dependency, offline-first Nigerian Postcode engine compiled to WebAssembly.
 - **NIPOST Gateway Integration (Online)**: Level 1–3 lookups, address autocompletion, radius-based nearby search, and reverse geocoding via standard async Promises.
 - **Native AI Agent Protocols**: Pre-formatted tool definitions ready for OpenAI (`function`), Anthropic (`input_schema`), and Google Gemini (`functionDeclarations`), with a unified `executeTool` dispatcher and telemetry guardrails.
 
-## Building the WASM Binary
 
-```bash
-GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
-```
 
 ## Quick Start (Node.js / Edge)
 

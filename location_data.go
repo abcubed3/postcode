@@ -82,10 +82,47 @@ var NigerianStates = map[string]StateRecord{
 
 // knownLGAs maps StateCode + LGACode (e.g. "EK01", "LA11") to LGA metadata.
 var knownLGAs = map[string]LGARecord{
-	"EK01": {StateCode: "EK", LGACode: "01", Name: "Ado Ekiti", Latitude: 7.6211, Longitude: 5.2215},
+	// Abia
+	"AB01": {StateCode: "AB", LGACode: "01", Name: "Aba North", Latitude: 5.1156, Longitude: 7.3676},
+	"AB02": {StateCode: "AB", LGACode: "02", Name: "Aba South", Latitude: 5.0982, Longitude: 7.3612},
+	"AB15": {StateCode: "AB", LGACode: "15", Name: "Umuahia North", Latitude: 5.5320, Longitude: 7.4860},
+	// Adamawa
+	"AD01": {StateCode: "AD", LGACode: "01", Name: "Yola North", Latitude: 9.2094, Longitude: 12.4818},
+	"AD02": {StateCode: "AD", LGACode: "02", Name: "Yola South", Latitude: 9.1932, Longitude: 12.4191},
+	// Akwa Ibom
+	"AK01": {StateCode: "AK", LGACode: "01", Name: "Eket", Latitude: 4.6423, Longitude: 7.9244},
 	"AK11": {StateCode: "AK", LGACode: "11", Name: "Uyo", Latitude: 5.0377, Longitude: 7.9128},
+	// Anambra
+	"AN01": {StateCode: "AN", LGACode: "01", Name: "Awka South", Latitude: 6.2209, Longitude: 7.0670},
+	"AN02": {StateCode: "AN", LGACode: "02", Name: "Onitsha North", Latitude: 6.1498, Longitude: 6.7857},
+	"AN03": {StateCode: "AN", LGACode: "03", Name: "Nnewi North", Latitude: 6.0195, Longitude: 6.9148},
+	// Bauchi
 	"BA02": {StateCode: "BA", LGACode: "02", Name: "Bauchi", Latitude: 10.3158, Longitude: 9.8442},
+	// Bayelsa
+	"BY01": {StateCode: "BY", LGACode: "01", Name: "Yenagoa", Latitude: 4.9267, Longitude: 6.2676},
+	// Benue
+	"BN01": {StateCode: "BN", LGACode: "01", Name: "Makurdi", Latitude: 7.7304, Longitude: 8.5211},
+	"BN02": {StateCode: "BN", LGACode: "02", Name: "Gboko", Latitude: 7.3250, Longitude: 9.0011},
+	"BN03": {StateCode: "BN", LGACode: "03", Name: "Otukpo", Latitude: 7.1931, Longitude: 8.1339},
+	// Borno
+	"BO01": {StateCode: "BO", LGACode: "01", Name: "Maiduguri", Latitude: 11.8333, Longitude: 13.1500},
+	// Cross River
+	"CR01": {StateCode: "CR", LGACode: "01", Name: "Calabar Municipal", Latitude: 4.9757, Longitude: 8.3417},
+	"CR02": {StateCode: "CR", LGACode: "02", Name: "Calabar South", Latitude: 4.9482, Longitude: 8.3250},
+	// Delta
+	"DE01": {StateCode: "DE", LGACode: "01", Name: "Oshimili South", Latitude: 6.1984, Longitude: 6.7329},
+	"DE02": {StateCode: "DE", LGACode: "02", Name: "Warri South", Latitude: 5.5167, Longitude: 5.7500},
+	// Ebonyi
 	"EB13": {StateCode: "EB", LGACode: "13", Name: "Abakaliki", Latitude: 6.3249, Longitude: 8.1137},
+	// Edo
+	"ED01": {StateCode: "ED", LGACode: "01", Name: "Oredo", Latitude: 6.3350, Longitude: 5.6037},
+	"ED02": {StateCode: "ED", LGACode: "02", Name: "Egor", Latitude: 6.3688, Longitude: 5.6012},
+	"ED03": {StateCode: "ED", LGACode: "03", Name: "Ikpoba-Okha", Latitude: 6.3021, Longitude: 5.6431},
+	// Ekiti
+	"EK01": {StateCode: "EK", LGACode: "01", Name: "Ado Ekiti", Latitude: 7.6211, Longitude: 5.2215},
+	// Enugu
+	"EN01": {StateCode: "EN", LGACode: "01", Name: "Enugu East", Latitude: 6.4721, Longitude: 7.5210},
+	"EN02": {StateCode: "EN", LGACode: "02", Name: "Enugu South", Latitude: 6.4180, Longitude: 7.4981},
 	"EN05": {StateCode: "EN", LGACode: "05", Name: "Enugu North", Latitude: 6.4584, Longitude: 7.5464},
 	// Federal Capital Territory (FCT) Area Councils
 	"FC01": {StateCode: "FC", LGACode: "01", Name: "Abaji", Latitude: 8.4721, Longitude: 6.9537},
@@ -94,8 +131,34 @@ var knownLGAs = map[string]LGARecord{
 	"FC04": {StateCode: "FC", LGACode: "04", Name: "Gwagwalada", Latitude: 8.9431, Longitude: 7.0825},
 	"FC05": {StateCode: "FC", LGACode: "05", Name: "Kuje", Latitude: 8.8797, Longitude: 7.2306},
 	"FC06": {StateCode: "FC", LGACode: "06", Name: "Kwali", Latitude: 8.8842, Longitude: 7.0142},
+	// Gombe
+	"GO01": {StateCode: "GO", LGACode: "01", Name: "Gombe", Latitude: 10.2897, Longitude: 11.1711},
+	// Imo
+	"IM01": {StateCode: "IM", LGACode: "01", Name: "Owerri Municipal", Latitude: 5.4858, Longitude: 7.0355},
+	"IM02": {StateCode: "IM", LGACode: "02", Name: "Owerri North", Latitude: 5.5121, Longitude: 7.0580},
+	"IM03": {StateCode: "IM", LGACode: "03", Name: "Owerri West", Latitude: 5.4620, Longitude: 6.9920},
+	// Jigawa
 	"JI24": {StateCode: "JI", LGACode: "24", Name: "Dutse", Latitude: 11.7594, Longitude: 9.3389},
+	// Kaduna
+	"KD01": {StateCode: "KD", LGACode: "01", Name: "Kaduna North", Latitude: 10.5105, Longitude: 7.4165},
+	"KD02": {StateCode: "KD", LGACode: "02", Name: "Kaduna South", Latitude: 10.4611, Longitude: 7.4192},
+	"KD03": {StateCode: "KD", LGACode: "03", Name: "Chikun", Latitude: 10.4210, Longitude: 7.3812},
+	"KD04": {StateCode: "KD", LGACode: "04", Name: "Zaria", Latitude: 11.0855, Longitude: 7.7199},
+	// Kano
+	"KN01": {StateCode: "KN", LGACode: "01", Name: "Fagge", Latitude: 12.0080, Longitude: 8.5310},
+	"KN02": {StateCode: "KN", LGACode: "02", Name: "Nassarawa", Latitude: 12.0110, Longitude: 8.5620},
+	"KN03": {StateCode: "KN", LGACode: "03", Name: "Tarauni", Latitude: 11.9760, Longitude: 8.5490},
 	"KN31": {StateCode: "KN", LGACode: "31", Name: "Kano Municipal", Latitude: 12.0022, Longitude: 8.5920},
+	// Katsina
+	"KT01": {StateCode: "KT", LGACode: "01", Name: "Katsina", Latitude: 12.9855, Longitude: 7.6171},
+	// Kebbi
+	"KE01": {StateCode: "KE", LGACode: "01", Name: "Birnin Kebbi", Latitude: 12.4504, Longitude: 4.1999},
+	// Kogi
+	"KO01": {StateCode: "KO", LGACode: "01", Name: "Lokoja", Latitude: 7.8023, Longitude: 6.7333},
+	// Kwara
+	"KW01": {StateCode: "KW", LGACode: "01", Name: "Ilorin West", Latitude: 8.4966, Longitude: 4.5421},
+	"KW02": {StateCode: "KW", LGACode: "02", Name: "Ilorin East", Latitude: 8.5120, Longitude: 4.5810},
+	"KW03": {StateCode: "KW", LGACode: "03", Name: "Ilorin South", Latitude: 8.4680, Longitude: 4.5680},
 	// All 20 Local Government Areas (LGAs) of Lagos State
 	"LA01": {StateCode: "LA", LGACode: "01", Name: "Agege", Latitude: 6.6180, Longitude: 3.3209},
 	"LA02": {StateCode: "LA", LGACode: "02", Name: "Ajeromi-Ifelodun", Latitude: 6.4554, Longitude: 3.3342},
@@ -117,8 +180,45 @@ var knownLGAs = map[string]LGARecord{
 	"LA18": {StateCode: "LA", LGACode: "18", Name: "Oshodi-Isolo", Latitude: 6.5388, Longitude: 3.3276},
 	"LA19": {StateCode: "LA", LGACode: "19", Name: "Shomolu", Latitude: 6.5385, Longitude: 3.3831},
 	"LA20": {StateCode: "LA", LGACode: "20", Name: "Surulere", Latitude: 6.4969, Longitude: 3.3565},
+	// Nasarawa
+	"NA01": {StateCode: "NA", LGACode: "01", Name: "Lafia", Latitude: 8.4932, Longitude: 8.5153},
+	"NA02": {StateCode: "NA", LGACode: "02", Name: "Karu", Latitude: 9.0067, Longitude: 7.6481},
+	// Niger
+	"NI01": {StateCode: "NI", LGACode: "01", Name: "Bida", Latitude: 9.0804, Longitude: 6.0100},
+	"NI02": {StateCode: "NI", LGACode: "02", Name: "Suleja", Latitude: 9.1806, Longitude: 7.1794},
 	"NI09": {StateCode: "NI", LGACode: "09", Name: "Chanchaga", Latitude: 9.6139, Longitude: 6.5569},
+	// Ogun
+	"OG01": {StateCode: "OG", LGACode: "01", Name: "Abeokuta North", Latitude: 7.1601, Longitude: 3.3321},
+	"OG02": {StateCode: "OG", LGACode: "02", Name: "Ado-Odo/Ota", Latitude: 6.6841, Longitude: 3.2320},
 	"OG14": {StateCode: "OG", LGACode: "14", Name: "Abeokuta South", Latitude: 7.1475, Longitude: 3.3619},
+	// Ondo
+	"ON01": {StateCode: "ON", LGACode: "01", Name: "Akure South", Latitude: 7.2571, Longitude: 5.2058},
+	"ON02": {StateCode: "ON", LGACode: "02", Name: "Akure North", Latitude: 7.3020, Longitude: 5.2510},
+	// Osun
+	"OS01": {StateCode: "OS", LGACode: "01", Name: "Osogbo", Latitude: 7.7827, Longitude: 4.5418},
+	"OS02": {StateCode: "OS", LGACode: "02", Name: "Ife Central", Latitude: 7.4905, Longitude: 4.5521},
+	// Oyo
+	"OY01": {StateCode: "OY", LGACode: "01", Name: "Ibadan North", Latitude: 7.4018, Longitude: 3.9110},
+	"OY02": {StateCode: "OY", LGACode: "02", Name: "Ibadan North-East", Latitude: 7.3880, Longitude: 3.9320},
+	"OY03": {StateCode: "OY", LGACode: "03", Name: "Ibadan North-West", Latitude: 7.3860, Longitude: 3.8790},
+	"OY04": {StateCode: "OY", LGACode: "04", Name: "Ibadan South-East", Latitude: 7.3520, Longitude: 3.9180},
+	"OY05": {StateCode: "OY", LGACode: "05", Name: "Ibadan South-West", Latitude: 7.3610, Longitude: 3.8680},
+	// Plateau
+	"PL01": {StateCode: "PL", LGACode: "01", Name: "Jos North", Latitude: 9.9271, Longitude: 8.8921},
+	"PL02": {StateCode: "PL", LGACode: "02", Name: "Jos South", Latitude: 9.8020, Longitude: 8.8650},
+	// Rivers
+	"RI01": {StateCode: "RI", LGACode: "01", Name: "Port Harcourt", Latitude: 4.8156, Longitude: 7.0498},
+	"RI02": {StateCode: "RI", LGACode: "02", Name: "Obio/Akpor", Latitude: 4.8472, Longitude: 7.0134},
+	"RI03": {StateCode: "RI", LGACode: "03", Name: "Eleme", Latitude: 4.7912, Longitude: 7.1205},
+	// Sokoto
+	"SO01": {StateCode: "SO", LGACode: "01", Name: "Sokoto North", Latitude: 13.0609, Longitude: 5.2476},
+	"SO02": {StateCode: "SO", LGACode: "02", Name: "Sokoto South", Latitude: 13.0410, Longitude: 5.2390},
+	// Taraba
+	"TA01": {StateCode: "TA", LGACode: "01", Name: "Jalingo", Latitude: 8.8937, Longitude: 11.3600},
+	// Yobe
+	"YO01": {StateCode: "YO", LGACode: "01", Name: "Damaturu", Latitude: 11.7470, Longitude: 11.9608},
+	// Zamfara
+	"ZA01": {StateCode: "ZA", LGACode: "01", Name: "Gusau", Latitude: 12.1702, Longitude: 6.6592},
 }
 
 // StateLGAs returns all reference LGAs for a given state code from the built-in reference dataset.
@@ -134,6 +234,110 @@ func StateLGAs(state string) []NamedCode {
 		return cmp.Compare(a.Code, b.Code)
 	})
 	return res
+}
+
+// stateAliases maps common Nigerian state aliases, ISO codes, and abbreviations to their 2-letter NIPOST code.
+var stateAliases = map[string]string{
+	"FCT":        "FC",
+	"ABUJA":      "FC",
+	"ABJ":        "FC",
+	"FCT ABUJA":  "FC",
+	"F.C.T":      "FC",
+	"F.C.T.":     "FC",
+	"BE":         "BN", // Common ISO 3166-2 / user confusion for Benue (BN)
+	"PH":         "RI",
+	"PHC":        "RI",
+	"PORT HARCOURT": "RI",
+	"AKWA-IBOM":  "AK",
+	"CROSS-RIVER": "CR",
+	"NASSARAWA":  "NA",
+	"ZAMFERA":    "ZA",
+	"PLATUE":     "PL",
+}
+
+// LookupState resolves a Nigerian state record by its 2-letter NIPOST code, full state name,
+// capital city name, or common alias (e.g. "LA", "Lagos", "Lagos State", "Ikeja", "FCT", "Abuja").
+func LookupState(query string) (StateRecord, bool) {
+	q := strings.ToUpper(strings.TrimSpace(query))
+	q = strings.TrimSuffix(q, " STATE")
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return StateRecord{}, false
+	}
+	if rec, ok := NigerianStates[q]; ok {
+		return rec, true
+	}
+	if code, ok := stateAliases[q]; ok {
+		if rec, ok2 := NigerianStates[code]; ok2 {
+			return rec, true
+		}
+	}
+	for _, rec := range NigerianStates {
+		if strings.EqualFold(rec.Name, q) || strings.EqualFold(rec.Capital, q) {
+			return rec, true
+		}
+	}
+	return StateRecord{}, false
+}
+
+// LookupLGA resolves an LGA record within a state by its 2-digit code (e.g. "11", "01", "1")
+// or name (e.g. "Ikeja", "Eti-Osa", "Eti Osa", "AMAC"). If state is empty, searches across all states.
+func LookupLGA(state, query string) (LGARecord, bool) {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return LGARecord{}, false
+	}
+	stCode := ""
+	if state != "" {
+		if stRec, ok := LookupState(state); ok {
+			stCode = stRec.Code
+		} else {
+			stCode = strings.ToUpper(strings.TrimSpace(state))
+		}
+	}
+
+	// Check if query is a numeric LGA code
+	numQ := q
+	if len(numQ) == 1 && numQ[0] >= '1' && numQ[0] <= '9' {
+		numQ = "0" + numQ
+	}
+	if stCode != "" && len(numQ) == 2 {
+		if rec, ok := knownLGAs[stCode+numQ]; ok {
+			return rec, true
+		}
+	}
+
+	normQ := normalizePlaceToken(q)
+	if normQ == "AMAC" && (stCode == "" || stCode == "FC") {
+		if rec, ok := knownLGAs["FC03"]; ok {
+			return rec, true
+		}
+	}
+
+	for _, rec := range knownLGAs {
+		if stCode != "" && rec.StateCode != stCode {
+			continue
+		}
+		if strings.EqualFold(rec.Name, q) || normalizePlaceToken(rec.Name) == normQ {
+			return rec, true
+		}
+	}
+	return LGARecord{}, false
+}
+
+func normalizePlaceToken(s string) string {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	s = strings.TrimSuffix(s, " LGA")
+	s = strings.TrimSuffix(s, " LOCAL GOVERNMENT")
+	s = strings.TrimSuffix(s, " AREA COUNCIL")
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // knownBuildings maps compact 11-char postcodes to building-level precision.

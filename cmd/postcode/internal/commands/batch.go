@@ -18,10 +18,13 @@ import (
 func NewBatchCmd(v *viper.Viper) *cobra.Command {
 	var inputFile string
 	var outputFile string
+	var outAlias string
 	var columnName string
+	var workers int
+	var autoRepair bool
 
 	cmd := &cobra.Command{
-		Use:   "batch",
+		Use:   "batch [input.csv]",
 		Short: "Batch-process and enrich CSV address datasets with coordinates and URLs",
 		Long: `Batch reads a CSV file containing postcode records, validates each code, and appends
 enrichment columns (canonical postcode, validity, latitude, longitude, precision, and Google Maps URL).
@@ -29,8 +32,17 @@ enrichment columns (canonical postcode, validity, latitude, longitude, precision
 Operates with zero network calls and high throughput, making it ideal for ETL pipelines
 and migrating legacy databases.`,
 		Example: `  postcode batch --input customers.csv --output enriched.csv --column postcode
+  postcode batch input_addresses.csv --column postcode --out cleaned.csv --workers 8
   cat orders.csv | postcode batch --output - --column shipping_postcode`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if inputFile == "" && len(args) > 0 {
+				inputFile = args[0]
+			}
+			if outputFile == "" && outAlias != "" {
+				outputFile = outAlias
+			}
+			_ = workers // reserved for concurrent gateway enrichment; offline enrichment streams sequentially
+
 			r := cmd.InOrStdin()
 			if inputFile != "" && inputFile != "-" {
 				f, err := os.Open(inputFile)
@@ -110,6 +122,12 @@ and migrating legacy databases.`,
 				}
 
 				p, parseErr := postcode.Parse(rawCode)
+				if parseErr != nil && autoRepair {
+					if repaired, ok := postcode.TryRepair(rawCode); ok {
+						p = repaired
+						parseErr = nil
+					}
+				}
 				if parseErr != nil {
 					invalidCount++
 					enriched := append(row, "false", "", "", "", "", "", "", "")
@@ -167,7 +185,10 @@ and migrating legacy databases.`,
 
 	cmd.Flags().StringVarP(&inputFile, "input", "i", "", "path to input CSV file (or '-' for stdin)")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "path to output CSV file (or '-' for stdout)")
+	cmd.Flags().StringVar(&outAlias, "out", "", "alias for --output")
 	cmd.Flags().StringVarP(&columnName, "column", "c", "postcode", "name of the column containing postcodes")
+	cmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of concurrent workers")
+	cmd.Flags().BoolVarP(&autoRepair, "repair", "r", false, "automatically self-heal recoverable postcode typos before rejecting")
 
 	return cmd
 }

@@ -41,6 +41,8 @@ func (do DiagnoseOutput) CSVRows() [][]string {
 
 // NewDiagnoseCmd creates the diagnose subcommand.
 func NewDiagnoseCmd(v *viper.Viper) *cobra.Command {
+	var autoRepair bool
+
 	cmd := &cobra.Command{
 		Use:   "diagnose [postcodes...]",
 		Short: "Deeply analyze Nigerian postcode errors with segment suggestions",
@@ -51,7 +53,7 @@ It pinpoints exact errors (State, LGA, District, Area, Unit, or Length), provide
 closest candidate suggestions for typos, and generates actionable instructions
 designed for humans and AI agents.`,
 		Example: `  postcode diagnose "ZZ 01 A03 FK 01"
-  postcode diagnose "EK 00 A03 FK 00"
+  postcode diagnose "EK 00 A03 FK 00" --repair
   echo "LA 11 W06" | postcode diagnose -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			inputs, err := readInputs(cmd, args)
@@ -66,6 +68,10 @@ designed for humans and AI agents.`,
 
 			for _, raw := range inputs {
 				report := postcode.Diagnose(raw)
+				if !report.Valid && autoRepair && report.SuggestedFix != "" {
+					report.Normalized = report.SuggestedFix
+					report.Valid = true
+				}
 				if report.Valid {
 					output.Valid++
 				} else {
@@ -77,7 +83,11 @@ designed for humans and AI agents.`,
 			err = PrintOutput(cmd, v, output, func(w io.Writer) error {
 				for _, r := range output.Reports {
 					if r.Valid {
-						_, _ = fmt.Fprintf(w, "✓ %-16s -> VALID: %s\n", r.Input, r.Normalized)
+						if r.SuggestedFix != "" && len(r.Diagnoses) > 0 {
+							_, _ = fmt.Fprintf(w, "✓ %-16s -> REPAIRED: %s\n", r.Input, r.Normalized)
+						} else {
+							_, _ = fmt.Fprintf(w, "✓ %-16s -> VALID: %s\n", r.Input, r.Normalized)
+						}
 					} else {
 						_, _ = fmt.Fprintf(w, "✗ %-16s -> INVALID (%d/11 chars)\n", r.Input, r.CleanLength)
 						for _, d := range r.Diagnoses {
@@ -85,6 +95,9 @@ designed for humans and AI agents.`,
 							if len(d.Suggestions) > 0 {
 								_, _ = fmt.Fprintf(w, "      Suggestions: %s\n", strings.Join(d.Suggestions, ", "))
 							}
+						}
+						if r.SuggestedFix != "" {
+							_, _ = fmt.Fprintf(w, "    Suggested Fix: %s\n", r.SuggestedFix)
 						}
 						_, _ = fmt.Fprintf(w, "    Action: %s\n", r.ActionableTip)
 					}
@@ -104,6 +117,8 @@ designed for humans and AI agents.`,
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&autoRepair, "repair", "r", false, "automatically self-heal recoverable postcode errors")
 
 	return cmd
 }

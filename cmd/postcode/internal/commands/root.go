@@ -40,6 +40,8 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 	// Persistent flags (inherited by all subcommands)
 	rootCmd.PersistentFlags().String("config", "", "config file path (default is $HOME/.postcode.yaml or ./.postcode.yaml)")
 	rootCmd.PersistentFlags().StringP("output", "o", "text", "output format: text, json, yaml, csv")
+	rootCmd.PersistentFlags().String("format", "", "Alias for --output (text, json, yaml, csv)")
+	rootCmd.PersistentFlags().Bool("json", false, "output as JSON (shorthand for --output json)")
 	rootCmd.PersistentFlags().StringP("api-key", "k", "", "NIPOST postcode API key (env: POSTCODE_API_KEY)")
 	rootCmd.PersistentFlags().String("base-url", "", "NIPOST postcode API base URL (env: POSTCODE_BASE_URL)")
 	rootCmd.PersistentFlags().String("apikey", "", "Alias for --api-key")
@@ -81,6 +83,9 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 
 	disassembleCmd := NewDisassembleCmd(v)
 	disassembleCmd.GroupID = "offline"
+
+	extractCmd := NewExtractCmd(v)
+	extractCmd.GroupID = "offline"
 
 	lookupCmd := NewLookupCmd(v)
 	lookupCmd.GroupID = "gateway"
@@ -133,6 +138,7 @@ the official NIPOST Postcode API (api.postcode.gov.ng).`,
 		mapCmd,
 		assembleCmd,
 		disassembleCmd,
+		extractCmd,
 		lookupCmd,
 		autocompleteCmd,
 		nearbyCmd,
@@ -163,6 +169,8 @@ func initConfig(v *viper.Viper, cmd *cobra.Command) error {
 	v.SetDefault("api", "")
 	v.SetDefault("url", "")
 	v.SetDefault("output", "text")
+	v.SetDefault("format", "")
+	v.SetDefault("json", false)
 	v.SetDefault("timeout", 10*time.Second)
 	v.SetDefault("online", false)
 	v.SetDefault("offline", false)

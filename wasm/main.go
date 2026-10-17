@@ -1162,6 +1162,56 @@ func jsGenerateSyntheticAddresses(this js.Value, args []js.Value) any {
 	return toJS(addresses)
 }
 
+func jsRepair(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		obj := js.Global().Get("Object").New()
+		obj.Set("repaired", false)
+		obj.Set("error", "code parameter is required")
+		return obj
+	}
+	raw := args[0].String()
+	p, ok := postcode.TryRepair(raw)
+	if !ok {
+		report := postcode.Diagnose(raw)
+		return toJS(map[string]any{
+			"repaired":       false,
+			"input":          raw,
+			"actionable_tip": report.ActionableTip,
+			"diagnoses":      report.Diagnoses,
+		})
+	}
+	return toJS(map[string]any{
+		"repaired": true,
+		"input":    raw,
+		"postcode": p.Formatted(),
+		"display":  p.String(),
+		"compact":  p.Compact(),
+		"slug":     p.Slug(),
+	})
+}
+
+func jsExtractAddress(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return toJS(postcode.AddressExtraction{Confidence: "low"})
+	}
+	return toJS(postcode.ExtractAddress(args[0].String()))
+}
+
+func jsDistanceMeters(this js.Value, args []js.Value) any {
+	if len(args) < 2 {
+		obj := js.Global().Get("Object").New()
+		obj.Set("error", "two postcode arguments (codeA, codeB) are required")
+		return obj
+	}
+	distM, err := postcode.DistanceMeters(args[0].String(), args[1].String())
+	if err != nil {
+		obj := js.Global().Get("Object").New()
+		obj.Set("error", err.Error())
+		return obj
+	}
+	return distM
+}
+
 func main() {
 	postcodeObj := js.Global().Get("Object").New()
 
@@ -1169,6 +1219,9 @@ func main() {
 	postcodeObj.Set("validate", js.FuncOf(jsValidate))
 	postcodeObj.Set("validateBatch", js.FuncOf(jsValidateBatch))
 	postcodeObj.Set("diagnose", js.FuncOf(jsDiagnose))
+	postcodeObj.Set("repair", js.FuncOf(jsRepair))
+	postcodeObj.Set("extractAddress", js.FuncOf(jsExtractAddress))
+	postcodeObj.Set("distanceMeters", js.FuncOf(jsDistanceMeters))
 	postcodeObj.Set("parse", js.FuncOf(jsParse))
 	postcodeObj.Set("format", js.FuncOf(jsFormat))
 	postcodeObj.Set("assemble", js.FuncOf(jsAssemble))

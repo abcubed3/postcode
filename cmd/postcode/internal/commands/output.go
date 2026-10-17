@@ -26,6 +26,12 @@ const (
 // PrintOutput formats and writes data to the command's stdout based on the configured format.
 func PrintOutput(cmd *cobra.Command, v *viper.Viper, data any, defaultTextPrinter func(w io.Writer) error) error {
 	format := strings.ToLower(v.GetString("output"))
+	if f := strings.ToLower(v.GetString("format")); f != "" {
+		format = f
+	}
+	if v.GetBool("json") {
+		format = string(FormatJSON)
+	}
 	if format == "" {
 		format = string(FormatText)
 	}

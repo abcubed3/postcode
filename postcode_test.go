@@ -239,3 +239,92 @@ func BenchmarkFormatted(b *testing.B) {
 		_ = p.Formatted()
 	}
 }
+
+func BenchmarkAppendFormatted(b *testing.B) {
+	p, _ := Parse("EK 01 A03 FK 01")
+	buf := make([]byte, 0, 15)
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		buf = p.AppendFormatted(buf[:0])
+	}
+}
+
+func TestPostcode_NewCoreMethods(t *testing.T) {
+	t.Parallel()
+
+	p1 := MustParse("\tLA-11-W06-TC-10\n")
+	p2 := MustParse("la 11 w06 tc 10")
+	p3 := MustParse("EK-01-A03-FK-01")
+
+	if !p1.Equal(p2) {
+		t.Errorf("expected p1.Equal(p2) to be true")
+	}
+	if p1.Equal(p3) {
+		t.Errorf("expected p1.Equal(p3) to be false")
+	}
+	if p3.Compare(p1) >= 0 || p1.Compare(p3) <= 0 || p1.Compare(p2) != 0 {
+		t.Errorf("unexpected Compare ordering between %s and %s", p3, p1)
+	}
+	if got := p1.Slug(); got != "la-11-w06-tc-10" {
+		t.Errorf("p1.Slug() = %q, want 'la-11-w06-tc-10'", got)
+	}
+	buf := p1.AppendFormatted(make([]byte, 0, 15))
+	if string(buf) != "LA-11-W06-TC-10" {
+		t.Errorf("AppendFormatted = %q, want 'LA-11-W06-TC-10'", string(buf))
+	}
+
+	// Distance calculations
+	dist := p1.DistanceTo(p3)
+	if dist < 200_000 || dist > 300_000 {
+		t.Errorf("expected distance between Lagos (Ikeja) and Ado Ekiti to be ~235km, got %.1fm", dist)
+	}
+	distFn, err := DistanceMeters("LA-11-W06-TC-10", "EK-01-A03-FK-01")
+	if err != nil || distFn != dist {
+		t.Errorf("DistanceMeters() = %.1f (err: %v), want %.1f", distFn, err, dist)
+	}
+
+	// PointGeometry
+	pg := p1.Location().PointGeometry()
+	if pg.Type != "Point" || len(pg.Coordinates) != 2 || pg.Coordinates[0] != 3.3515 || pg.Coordinates[1] != 6.6018 {
+		t.Errorf("unexpected PointGeometry: %+v", pg)
+	}
+
+	// SQL driver.Valuer & sql.Scanner
+	val, err := p1.Value()
+	if err != nil || val != "LA-11-W06-TC-10" {
+		t.Errorf("p1.Value() = %v (err: %v), want 'LA-11-W06-TC-10'", val, err)
+	}
+	var scanned Postcode
+	if err := scanned.Scan("la 11 w06 tc 10"); err != nil || !scanned.Equal(p1) {
+		t.Errorf("Scan(string) failed: got %v, err %v", scanned, err)
+	}
+	if err := scanned.Scan([]byte("EK-01-A03-FK-01")); err != nil || !scanned.Equal(p3) {
+		t.Errorf("Scan([]byte) failed: got %v, err %v", scanned, err)
+	}
+	if err := scanned.Scan(nil); err != nil || !scanned.IsZero() {
+		t.Errorf("Scan(nil) failed: got %v, err %v", scanned, err)
+	}
+
+	// LookupState & LookupLGA
+	if st, ok := LookupState("Abuja"); !ok || st.Code != "FC" {
+		t.Errorf("LookupState('Abuja') = %+v, ok=%v; want FC", st, ok)
+	}
+	if st, ok := LookupState("BE"); !ok || st.Code != "BN" {
+		t.Errorf("LookupState('BE') = %+v, ok=%v; want BN (Benue)", st, ok)
+	}
+	if lga, ok := LookupLGA("Lagos", "Eti Osa"); !ok || lga.LGACode != "08" {
+		t.Errorf("LookupLGA('Lagos', 'Eti Osa') = %+v, ok=%v; want 08", lga, ok)
+	}
+	if lga, ok := LookupLGA("FC", "AMAC"); !ok || lga.LGACode != "03" {
+		t.Errorf("LookupLGA('FC', 'AMAC') = %+v, ok=%v; want 03", lga, ok)
+	}
+
+	// Every one of the 37 states must have at least 1 LGA in StateLGAs
+	for code := range NigerianStates {
+		if lgas := StateLGAs(code); len(lgas) == 0 {
+			t.Errorf("expected non-empty StateLGAs(%q), got 0", code)
+		}
+	}
+}

@@ -7,6 +7,9 @@
 *.wasm
 bin/
 
+.agents/teamwork/
+.agents/skills/
+
 # Test binaries and coverage
 *.test
 *.out
@@ -26,3 +29,5 @@ coverage.html
 
 # Notes
 *.notes.txt
+
+output/

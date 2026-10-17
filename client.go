@@ -133,6 +133,73 @@ func WithBaseTransport(rt http.RoundTripper) ClientOption {
 	}
 }
 
+// WithHandler configures the client to execute HTTP requests directly in-memory against h
+// (such as simulator.NewHandler()) without opening TCP sockets, while preserving retry and telemetry middleware.
+func WithHandler(h http.Handler) ClientOption {
+	return func(c *Client) {
+		if h != nil {
+			c.baseTransport = NewHandlerTransport(h)
+		}
+	}
+}
+
+type handlerTransport struct {
+	handler http.Handler
+}
+
+type inMemoryResponseWriter struct {
+	header     http.Header
+	body       bytes.Buffer
+	statusCode int
+}
+
+func (w *inMemoryResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *inMemoryResponseWriter) WriteHeader(code int) {
+	if w.statusCode == 0 {
+		w.statusCode = code
+	}
+}
+
+func (w *inMemoryResponseWriter) Write(b []byte) (int, error) {
+	if w.statusCode == 0 {
+		w.statusCode = http.StatusOK
+	}
+	return w.body.Write(b)
+}
+
+func (t *handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := req.Context().Err(); err != nil {
+		return nil, err
+	}
+	rw := &inMemoryResponseWriter{
+		header: make(http.Header),
+	}
+	t.handler.ServeHTTP(rw, req)
+	if rw.statusCode == 0 {
+		rw.statusCode = http.StatusOK
+	}
+	return &http.Response{
+		Status:        fmt.Sprintf("%d %s", rw.statusCode, http.StatusText(rw.statusCode)),
+		StatusCode:    rw.statusCode,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        rw.header,
+		Body:          io.NopCloser(bytes.NewReader(rw.body.Bytes())),
+		ContentLength: int64(rw.body.Len()),
+		Request:       req,
+	}, nil
+}
+
+// NewHandlerTransport wraps an http.Handler as an in-memory http.RoundTripper.
+// Ideal for deterministic, zero-network unit testing and sandboxed agent execution.
+func NewHandlerTransport(h http.Handler) http.RoundTripper {
+	return &handlerTransport{handler: h}
+}
+
 // WithRetryConfig configures backoff, jitter, and retry limits.
 func WithRetryConfig(cfg RetryConfig) ClientOption {
 	return func(c *Client) {

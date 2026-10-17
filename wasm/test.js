@@ -192,6 +192,22 @@ async function run() {
   assert(Array.isArray(toolLGAs) && toolLGAs.length >= 20);
   console.log('✔ executeTool("disassemble_postcode") & executeTool("list_lgas") passed');
 
+  // 20. Auto-Repair, Address Extraction, and Distance Calculation
+  const repaired = postcode.repair('EK-1-AO3-FK-1');
+  assert.strictEqual(repaired.repaired, true);
+  assert.strictEqual(repaired.postcode, 'EK-01-A03-FK-01');
+  assert.strictEqual(repaired.slug, 'ek-01-a03-fk-01');
+
+  const extracted = postcode.extractAddress('Plot 14 Admiralty Way, beside Zenith Bank, Lekki Phase 1, Eti-Osa, Lagos 100001');
+  assert.strictEqual(extracted.state_code, 'LA');
+  assert.strictEqual(extracted.lga_code, '08');
+  assert.strictEqual(extracted.legacy_postcode, '100001');
+
+  const dist = postcode.distanceMeters('EK-01-A03-FK-01', 'LA-08-A86-RG-01');
+  assert.strictEqual(dist.valid, true);
+  assert(dist.distance_km > 150 && dist.distance_km < 350);
+  console.log('✔ repair(), extractAddress(), & distanceMeters() passed');
+
   console.log('\nAll parity verification tests passed successfully! 🎉');
 }
 

@@ -123,3 +123,67 @@ func TestValidationError(t *testing.T) {
 		t.Errorf("expected error string to mention invalid, got %q", valErr.Error())
 	}
 }
+
+func TestDiagnoseLegacy6DigitAndSingleDigitPadding(t *testing.T) {
+	// 1. Legacy 6-digit Nigerian postal code (e.g. 100001 for Lagos Ikeja)
+	legReport := Diagnose("100001")
+	if legReport.Valid {
+		t.Fatalf("expected legacy 6-digit code 100001 to be invalid")
+	}
+	foundLegacy := false
+	for _, d := range legReport.Diagnoses {
+		if d.Segment == "LegacyFormat" && strings.Contains(d.Message, "LA-11") {
+			foundLegacy = true
+		}
+	}
+	if !foundLegacy {
+		t.Errorf("expected LegacyFormat diagnosis suggesting LA-11 for '100001', got %+v", legReport.Diagnoses)
+	}
+
+	// 2. Single-digit unpadded LGA & Unit in delimited input
+	padReport := Diagnose("EK-1-A03-FK-1")
+	if padReport.Valid {
+		t.Fatalf("expected unpadded 'EK-1-A03-FK-1' to be invalid before repair")
+	}
+	if padReport.SuggestedFix != "EK-01-A03-FK-01" {
+		t.Errorf("expected SuggestedFix 'EK-01-A03-FK-01', got %q", padReport.SuggestedFix)
+	}
+	for _, d := range padReport.Diagnoses {
+		if d.Segment == "District" || d.Segment == "Area" {
+			t.Errorf("unexpected false cascading diagnosis on %s: %+v", d.Segment, d)
+		}
+	}
+}
+
+func TestTryRepairAndRepair(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"EK-1-A03-FK-1", "EK-01-A03-FK-01"},
+		{"LA 00 W06 TC 00", "LA-01-W06-TC-01"},
+		{"BE-01-A01-AA-01", "BN-01-A01-AA-01"}, // ISO 'BE' -> NIPOST 'BN' (Benue)
+		{"FCT-03-B06-AG-12", "FC-03-B06-AG-12"},
+		{"LA-II-W06-TC-I0", "LA-11-W06-TC-10"}, // OCR 'I' -> '1' in numeric segments
+		{"EK-O1-A03-FK-O1", "EK-01-A03-FK-01"}, // OCR 'O' -> '0' in numeric segments
+	}
+
+	for _, tc := range cases {
+		p, ok := TryRepair(tc.input)
+		if !ok {
+			t.Errorf("TryRepair(%q) failed, expected %q", tc.input, tc.want)
+			continue
+		}
+		if p.Formatted() != tc.want {
+			t.Errorf("TryRepair(%q) = %q, want %q", tc.input, p.Formatted(), tc.want)
+		}
+		repaired, err := Repair(tc.input)
+		if err != nil || repaired.Formatted() != tc.want {
+			t.Errorf("Repair(%q) = %q (err: %v), want %q", tc.input, repaired.Formatted(), err, tc.want)
+		}
+	}
+
+	if _, err := Repair("COMPLETELY_UNRECOVERABLE"); err == nil {
+		t.Errorf("expected error from Repair on unrecoverable input")
+	}
+}

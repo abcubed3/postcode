@@ -153,13 +153,104 @@ func TestAgentDispatcherOffline(t *testing.T) {
 		t.Errorf("expected gateway client required error, got %v", errOnline)
 	}
 
-	// 7. DispatchString
+	// 12. validate_postcode with unknown state code (e.g., ZZ)
+	resZZ, err := dispatcher.Dispatch(ctx, "validate_postcode", []byte(`{"code":"ZZ-01-A03-FK-01"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	zzMap, ok := resZZ.(map[string]any)
+	if !ok || zzMap["valid"] != false {
+		t.Errorf("expected valid=false for unknown state ZZ, got %+v", resZZ)
+	}
+
+	// 13. repair_postcode
+	resRepair, err := dispatcher.Dispatch(ctx, "repair_postcode", []byte(`{"code":"EK-1-AO3-FK-1"}`))
+	if err != nil {
+		t.Fatalf("repair_postcode failed: %v", err)
+	}
+	repMap, ok := resRepair.(map[string]any)
+	if !ok || repMap["repaired"] != true || repMap["postcode"] != "EK-01-A03-FK-01" {
+		t.Errorf("expected repaired EK-01-A03-FK-01, got %+v", resRepair)
+	}
+
+	// 14. extract_address
+	resExt, err := dispatcher.Dispatch(ctx, "extract_address", []byte(`{"address":"Plot 14 Admiralty Way, beside Zenith Bank, Lekki Phase 1, Eti-Osa, Lagos 100001"}`))
+	if err != nil {
+		t.Fatalf("extract_address failed: %v", err)
+	}
+	ext, ok := resExt.(AddressExtraction)
+	if !ok || ext.StateCode != "LA" || ext.LGACode != "08" || ext.LegacyPostcode != "100001" {
+		t.Errorf("unexpected extract_address result: %+v", resExt)
+	}
+
+	// 15. calculate_distance
+	resDist, err := dispatcher.Dispatch(ctx, "calculate_distance", []byte(`{"from_code":"EK-01-A03-FK-01","to_code":"LA-08-A86-RG-01"}`))
+	if err != nil {
+		t.Fatalf("calculate_distance failed: %v", err)
+	}
+	distMap, ok := resDist.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result from calculate_distance, got %T", resDist)
+	}
+	if distKm, ok := distMap["distance_km"].(float64); !ok || distKm < 150 || distKm > 350 {
+		t.Errorf("expected distance_km ~218km, got %v", distMap["distance_km"])
+	}
+
+	// 16. DispatchString
 	strRes, err := dispatcher.DispatchString(ctx, "validate_postcode", []byte(`{"code":"EK-01-A03-FK-01"}`))
 	if err != nil {
 		t.Fatalf("DispatchString failed: %v", err)
 	}
 	if !strings.Contains(strRes, `"valid":true`) {
 		t.Errorf("expected valid:true in JSON string, got %s", strRes)
+	}
+}
+
+func TestClientWithHandlerAndCacheNormalization(t *testing.T) {
+	lookupHits := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/lookup", func(w http.ResponseWriter, r *http.Request) {
+		lookupHits++
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "1000")
+		w.Header().Set("X-RateLimit-Remaining", "999")
+		w.Header().Set("X-Credit-Balance", "4995")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"postcode": "EK-01-A03-FK-01",
+				"valid":    true,
+				"level":    2,
+			},
+		})
+	})
+
+	client, err := NewClient(
+		WithHandler(mux),
+		WithAPIKey("test_key"),
+		WithDefaultCache(),
+	)
+	if err != nil {
+		t.Fatalf("NewClient with WithHandler failed: %v", err)
+	}
+
+	ctx := context.Background()
+	// First call: spaced lowercase Level 2
+	resp1, err := client.Lookup(ctx, "ek 01 a03 fk 01", Level2)
+	if err != nil || !resp1.Valid {
+		t.Fatalf("Lookup 1 failed: %v", err)
+	}
+	rl := client.RateLimit()
+	if rl == nil || rl.CreditBalance != 4995 {
+		t.Errorf("expected CreditBalance=4995, got %+v", rl)
+	}
+
+	// Second call: compact uppercase Level 1 (should hit cumulative normalized cache!)
+	resp2, err := client.Lookup(ctx, "EK01A03FK01", Level1)
+	if err != nil || !resp2.Valid {
+		t.Fatalf("Lookup 2 failed: %v", err)
+	}
+	if lookupHits != 1 {
+		t.Errorf("expected 1 HTTP lookup due to normalized cumulative cache hit, got %d", lookupHits)
 	}
 }
 

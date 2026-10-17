@@ -97,11 +97,19 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 		requestedLevel = Level1
 	}
 
-	cacheKey := fmt.Sprintf("lookup:%s:%d", code, requestedLevel)
+	normCode := code
+	if p, err := Parse(code); err == nil {
+		normCode = p.Formatted()
+	}
+
 	if c.cache != nil {
-		if val, ok := c.cache.Get(cacheKey); ok {
-			if cached, ok := val.(*LookupResponse); ok {
-				return cached, nil
+		// Lookup levels are cumulative: any cached response at requestedLevel or higher satisfies this lookup.
+		for lvl := requestedLevel; lvl <= Level5; lvl++ {
+			cacheKey := fmt.Sprintf("lookup:%s:%d", normCode, lvl)
+			if val, ok := c.cache.Get(cacheKey); ok {
+				if cached, ok := val.(*LookupResponse); ok {
+					return cached, nil
+				}
 			}
 		}
 	}
@@ -115,17 +123,20 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 		}
 	}
 
-	effectiveCacheKey := fmt.Sprintf("lookup:%s:%d", code, effectiveLevel)
+	effectiveCacheKey := fmt.Sprintf("lookup:%s:%d", normCode, effectiveLevel)
 	if effectiveLevel != requestedLevel && c.cache != nil {
-		if val, ok := c.cache.Get(effectiveCacheKey); ok {
-			if cached, ok := val.(*LookupResponse); ok {
-				return cached, nil
+		for lvl := effectiveLevel; lvl <= Level5; lvl++ {
+			cacheKey := fmt.Sprintf("lookup:%s:%d", normCode, lvl)
+			if val, ok := c.cache.Get(cacheKey); ok {
+				if cached, ok := val.(*LookupResponse); ok {
+					return cached, nil
+				}
 			}
 		}
 	}
 
 	q := make(url.Values, 2)
-	q.Set("code", code)
+	q.Set("code", normCode)
 	if effectiveLevel > 0 {
 		q.Set("level", strconv.Itoa(int(effectiveLevel)))
 	}

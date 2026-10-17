@@ -237,39 +237,20 @@ var (
 )
 
 // BaselineExtract provides an offline heuristic extractor for Nigerian addresses.
-// It searches raw unstructured text for state names/codes and postcode patterns.
+// It searches raw unstructured text for state names/codes and postcode patterns
+// using the 5-stage Nigerian address disambiguation pipeline.
 func BaselineExtract(raw string) (extractedState string, extractedPostcode string) {
-	upper := strings.ToUpper(raw)
-
-	// 1. Detect postcode
-	if match := postcodeRegex.FindStringSubmatch(raw); len(match) == 6 {
-		extractedPostcode = fmt.Sprintf("%s %s %s %s %s",
-			strings.ToUpper(match[1]),
-			match[2],
-			strings.ToUpper(match[3]),
-			strings.ToUpper(match[4]),
-			match[5],
-		)
-	} else if match := legacyRegex.FindStringSubmatch(raw); len(match) == 2 {
-		extractedPostcode = match[1]
-	}
-
-	// 2. Detect state (longest name match first)
-	for _, entry := range sortedStateEntries {
-		if strings.Contains(upper, entry.upper) {
-			extractedState = entry.name
-			break
+	ext := ExtractAddress(raw)
+	extractedState = ext.StateName
+	if ext.Postcode != "" {
+		if p, err := Parse(ext.Postcode); err == nil {
+			extractedPostcode = p.String()
+		} else {
+			extractedPostcode = strings.ReplaceAll(ext.Postcode, "-", " ")
 		}
+	} else if ext.LegacyPostcode != "" {
+		extractedPostcode = ext.LegacyPostcode
 	}
-	// Fallback to 2-letter state code
-	if extractedState == "" {
-		if match := stateCodeRegex.FindString(upper); match != "" {
-			if info, ok := NigerianStates[match]; ok {
-				extractedState = info.Name
-			}
-		}
-	}
-
 	return extractedState, extractedPostcode
 }
 

@@ -10,10 +10,11 @@ import (
 // RateLimitInfo contains the rate-limiting quotas returned by the NIPOST API gateway
 // as documented in https://docs.postcode.gov.ng/authentication.
 type RateLimitInfo struct {
-	Limit      int           // Maximum requests allowed in current window (from X-RateLimit-Limit)
-	Remaining  int           // Remaining requests in current window (from X-RateLimit-Remaining)
-	ResetAt    time.Time     // Timestamp when quota resets (from X-RateLimit-Reset or Retry-After)
-	RetryAfter time.Duration // Cooldown duration requested by server (from Retry-After or X-RateLimit-Reset)
+	Limit         int           // Maximum requests allowed in current window (from X-RateLimit-Limit)
+	Remaining     int           // Remaining requests in current window (from X-RateLimit-Remaining)
+	CreditBalance int           // Remaining commercial credit balance, or -1 if header not present (from X-Credit-Balance)
+	ResetAt       time.Time     // Timestamp when quota resets (from X-RateLimit-Reset or Retry-After)
+	RetryAfter    time.Duration // Cooldown duration requested by server (from Retry-After or X-RateLimit-Reset)
 }
 
 // ParseRateLimitInfo extracts rate limit quotas and cooldown durations from HTTP response headers.
@@ -25,12 +26,15 @@ func ParseRateLimitInfo(h http.Header) *RateLimitInfo {
 	remStr := h.Get("X-RateLimit-Remaining")
 	resetStr := h.Get("X-RateLimit-Reset")
 	retryAfterStr := h.Get("Retry-After")
+	creditStr := h.Get("X-Credit-Balance")
 
-	if limitStr == "" && remStr == "" && resetStr == "" && retryAfterStr == "" {
+	if limitStr == "" && remStr == "" && resetStr == "" && retryAfterStr == "" && creditStr == "" {
 		return nil
 	}
 
-	info := &RateLimitInfo{}
+	info := &RateLimitInfo{
+		CreditBalance: -1,
+	}
 	if limitStr != "" {
 		if v, err := strconv.Atoi(limitStr); err == nil {
 			info.Limit = v
@@ -39,6 +43,11 @@ func ParseRateLimitInfo(h http.Header) *RateLimitInfo {
 	if remStr != "" {
 		if v, err := strconv.Atoi(remStr); err == nil {
 			info.Remaining = v
+		}
+	}
+	if creditStr != "" {
+		if v, err := strconv.Atoi(creditStr); err == nil {
+			info.CreditBalance = v
 		}
 	}
 

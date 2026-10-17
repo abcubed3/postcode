@@ -67,7 +67,7 @@ export interface ParsedPostcode {
 }
 
 export interface SegmentDiagnosis {
-  segment: 'Length' | 'State' | 'LGA' | 'District' | 'Area' | 'BuildingUnit';
+  segment: 'Length' | 'LegacyFormat' | 'State' | 'LGA' | 'District' | 'Area' | 'BuildingUnit';
   input: string;
   expected: string;
   message: string;
@@ -78,10 +78,41 @@ export interface DiagnosticReport {
   input: string;
   valid: boolean;
   normalized?: string;
+  suggested_fix?: string;
   clean_length: number;
   format_score: number;
   diagnoses?: SegmentDiagnosis[];
   actionable_tip?: string;
+}
+
+export interface RepairResult {
+  repaired: boolean;
+  input: string;
+  postcode?: string;
+  display?: string;
+  compact?: string;
+  slug?: string;
+  actionable_tip?: string;
+  diagnoses?: SegmentDiagnosis[];
+  error?: string;
+}
+
+export interface AddressExtraction {
+  raw: string;
+  postcode?: string;
+  postcode_valid: boolean;
+  legacy_postcode?: string;
+  suggested_prefix?: string;
+  state_code?: string;
+  state_name?: string;
+  lga_code?: string;
+  lga_name?: string;
+  locality?: string;
+  street?: string;
+  landmark?: string;
+  latitude?: number;
+  longitude?: number;
+  confidence: 'high' | 'medium' | 'low';
 }
 
 export interface LocationResult {
@@ -253,6 +284,9 @@ export interface PostcodeEngine {
   validate(code: string): ValidationResult;
   validateBatch(codes: string[]): ValidationResult[];
   diagnose(code: string): DiagnosticReport;
+  repair(code: string): RepairResult;
+  extractAddress(address: string): AddressExtraction;
+  distanceMeters(codeA: string, codeB: string): number | { error: string };
   parse(code: string): ParsedPostcode;
   format(code: string, style?: 'canonical' | 'compact' | 'spaced' | 'hyphenated' | 'slug'): string;
   assemble(segments: { state: string; lga: string; district: string; area: string; unit: string }): AssembledPostcode;

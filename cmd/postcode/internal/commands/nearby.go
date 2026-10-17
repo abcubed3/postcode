@@ -43,6 +43,8 @@ func NewNearbyCmd(v *viper.Viper) *cobra.Command {
 	var lat float64
 	var lng float64
 	var radius float64
+	var codeFlag string
+	var postcodeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "nearby [postcode]",
@@ -50,15 +52,23 @@ func NewNearbyCmd(v *viper.Viper) *cobra.Command {
 		Long: `Nearby queries the NIPOST gateway for registered building units within a specified
 radius (default 300 meters) of a given geographic coordinate or a reference postcode.`,
 		Example: `  postcode nearby LA-08-A86-RG-01 --apikey <key>
+  postcode nearby --code LA-08-A86-RG-01 --radius 200
   postcode nearby --lat 6.6018 --lng 3.3515 --apikey <key>
   postcode nearby LA-08-A86-RG-01 --radius 150 -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var targetCode string
 			var loc postcode.Location
-			if len(args) > 0 {
-				p, parseErr := postcode.Parse(args[0])
+			rawCode := codeFlag
+			if rawCode == "" {
+				rawCode = postcodeFlag
+			}
+			if rawCode == "" && len(args) > 0 {
+				rawCode = args[0]
+			}
+			if rawCode != "" {
+				p, parseErr := postcode.Parse(rawCode)
 				if parseErr != nil {
-					return fmt.Errorf("invalid reference postcode %q: %w", args[0], parseErr)
+					return fmt.Errorf("invalid reference postcode %q: %w", rawCode, parseErr)
 				}
 				targetCode = p.Formatted()
 				loc = p.Location()
@@ -125,6 +135,8 @@ radius (default 300 meters) of a given geographic coordinate or a reference post
 		},
 	}
 
+	cmd.Flags().StringVarP(&codeFlag, "code", "c", "", "reference Nigerian postcode (e.g. 'LA-08-A86-RG-01')")
+	cmd.Flags().StringVar(&postcodeFlag, "postcode", "", "alias for --code")
 	cmd.Flags().Float64Var(&lat, "lat", 0, "geographic latitude (-90 to +90)")
 	cmd.Flags().Float64Var(&lng, "lng", 0, "geographic longitude (-180 to +180)")
 	cmd.Flags().Float64Var(&radius, "radius", 300, "search radius in meters (max 300)")

@@ -46,7 +46,7 @@ Nigeria's National Digital Alphanumeric Postcode system represents physical deli
 | **AN** | Anambra | South East | Awka |
 | **BA** | Bauchi | North East | Bauchi |
 | **BY** | Bayelsa | South South | Yenagoa |
-| **BE** | Benue | North Central | Makurdi |
+| **BN** | Benue | North Central | Makurdi |
 | **BO** | Borno | North East | Maiduguri |
 | **CR** | Cross River | South South | Calabar |
 | **DE** | Delta | South South | Asaba |

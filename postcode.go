@@ -1,6 +1,8 @@
 package postcode
 
 import (
+	"bytes"
+	"database/sql/driver"
 	"encoding"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ var (
 	_ encoding.TextAppender    = Postcode{}
 	_ encoding.TextMarshaler   = Postcode{}
 	_ encoding.TextUnmarshaler = (*Postcode)(nil)
+	_ driver.Valuer            = Postcode{}
 )
 
 // Postcode represents an immutable, validated 11-byte Nigerian postcode.
@@ -31,7 +34,7 @@ func Parse(raw string) (Postcode, error) {
 
 	for i := 0; i < len(raw); i++ {
 		b := raw[i]
-		if b == ' ' || b == '-' {
+		if b == ' ' || b == '-' || b == '\t' || b == '\n' || b == '\r' {
 			continue
 		}
 		if idx >= 11 {
@@ -75,6 +78,16 @@ func Parse(raw string) (Postcode, error) {
 	}
 
 	return p, nil
+}
+
+// MustParse is like Parse but panics if raw cannot be parsed as a valid 11-character postcode.
+// Intended for package-level test fixtures and static initialization.
+func MustParse(raw string) Postcode {
+	p, err := Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return p
 }
 
 // Validate checks that raw is a grammatically valid Nigerian postcode
@@ -165,12 +178,12 @@ func (p Postcode) Compact() string {
 	return p.Raw()
 }
 
-// Formatted returns the canonical hyphenated representation (e.g. "EK-01-A03-FK-01").
-func (p Postcode) Formatted() string {
+// AppendFormatted appends the canonical hyphenated representation (e.g. "EK-01-A03-FK-01")
+// to b with 0 heap allocations when b has sufficient capacity (15 bytes).
+func (p Postcode) AppendFormatted(b []byte) []byte {
 	if p.IsZero() {
-		return ""
+		return b
 	}
-	b := make([]byte, 0, 15)
 	b = append(b, p.raw[0:2]...)
 	b = append(b, '-')
 	b = append(b, p.raw[2:4]...)
@@ -180,7 +193,47 @@ func (p Postcode) Formatted() string {
 	b = append(b, p.raw[7:9]...)
 	b = append(b, '-')
 	b = append(b, p.raw[9:11]...)
-	return string(b)
+	return b
+}
+
+// Formatted returns the canonical hyphenated representation (e.g. "EK-01-A03-FK-01").
+func (p Postcode) Formatted() string {
+	if p.IsZero() {
+		return ""
+	}
+	var b [15]byte
+	copy(b[0:2], p.raw[0:2])
+	b[2] = '-'
+	copy(b[3:5], p.raw[2:4])
+	b[5] = '-'
+	copy(b[6:9], p.raw[4:7])
+	b[9] = '-'
+	copy(b[10:12], p.raw[7:9])
+	b[12] = '-'
+	copy(b[13:15], p.raw[9:11])
+	return string(b[:])
+}
+
+// Slug returns the URL-friendly lowercase hyphenated representation (e.g. "ek-01-a03-fk-01").
+func (p Postcode) Slug() string {
+	if p.IsZero() {
+		return ""
+	}
+	var b [15]byte
+	j := 0
+	for i := 0; i < 11; i++ {
+		if i == 2 || i == 4 || i == 7 || i == 9 {
+			b[j] = '-'
+			j++
+		}
+		ch := p.raw[i]
+		if ch >= 'A' && ch <= 'Z' {
+			ch += 32
+		}
+		b[j] = ch
+		j++
+	}
+	return string(b[:])
 }
 
 // Location returns the resolved geographic location and mapping URLs for this postcode.
@@ -200,8 +253,60 @@ func (p Postcode) Coordinates() (lat, lng float64) {
 	return loc.Latitude, loc.Longitude
 }
 
+// DistanceTo returns the Haversine distance in meters between this postcode and other.
+func (p Postcode) DistanceTo(other Postcode) float64 {
+	return p.Location().DistanceTo(other.Location())
+}
+
 func (p Postcode) IsZero() bool {
 	return p.raw == [11]byte{}
+}
+
+// Equal reports whether p and other represent the same 11-character postcode.
+func (p Postcode) Equal(other Postcode) bool {
+	return p.raw == other.raw
+}
+
+// Compare returns an integer comparing two postcodes lexicographically:
+// 0 if p == other, -1 if p < other, and +1 if p > other.
+// Suitable for use with slices.SortFunc.
+func (p Postcode) Compare(other Postcode) int {
+	return bytes.Compare(p.raw[:], other.raw[:])
+}
+
+// Value implements driver.Valuer, storing the canonical hyphenated postcode (or nil if zero).
+func (p Postcode) Value() (driver.Value, error) {
+	if p.IsZero() {
+		return nil, nil
+	}
+	return p.Formatted(), nil
+}
+
+// Scan implements sql.Scanner, accepting string, []byte, or nil database values.
+func (p *Postcode) Scan(src any) error {
+	if src == nil {
+		*p = Postcode{}
+		return nil
+	}
+	var raw string
+	switch v := src.(type) {
+	case string:
+		raw = v
+	case []byte:
+		raw = string(v)
+	default:
+		return fmt.Errorf("postcode: cannot scan type %T into Postcode", src)
+	}
+	if raw == "" {
+		*p = Postcode{}
+		return nil
+	}
+	parsed, err := Parse(raw)
+	if err != nil {
+		return err
+	}
+	*p = parsed
+	return nil
 }
 
 // AppendText implements encoding.TextAppender for zero-alloc formatting.

@@ -69,3 +69,34 @@ func TestEvaluateAgent(t *testing.T) {
 		t.Errorf("expected positive average format score, got %.2f", res.AvgFormatScore)
 	}
 }
+
+func TestExtractAddress_DisambiguationPipeline(t *testing.T) {
+	// 1. Address with "Abuja FCT", landmark, and English word "by" (should NOT match Bayelsa "BY")
+	raw1 := "No. 14, Adetokunbo Ademola Street, Beside First Bank by the junction, Wuse II, Abuja FCT, FC 03 B06 AG 12"
+	ext1 := ExtractAddress(raw1)
+	if ext1.StateCode != "FC" || ext1.StateName != "Federal Capital Territory" {
+		t.Errorf("expected FC (Federal Capital Territory), got %s (%s)", ext1.StateCode, ext1.StateName)
+	}
+	if ext1.Postcode != "FC-03-B06-AG-12" || !ext1.PostcodeValid {
+		t.Errorf("expected valid postcode FC-03-B06-AG-12, got %q (valid=%v)", ext1.Postcode, ext1.PostcodeValid)
+	}
+	if ext1.Locality != "Wuse II" {
+		t.Errorf("expected locality 'Wuse II', got %q", ext1.Locality)
+	}
+	if ext1.Landmark == "" {
+		t.Errorf("expected non-empty landmark, got empty")
+	}
+
+	// 2. Informal address with legacy 6-digit postcode and no modern postcode
+	raw2 := "Plot 22, Admiralty Way, Opposite Shoprite Mall, Lekki Phase 1, Lagos 100001"
+	ext2 := ExtractAddress(raw2)
+	if ext2.StateCode != "LA" || ext2.LGACode != "08" {
+		t.Errorf("expected LA-08 (Eti-Osa) for Lekki Phase 1, got %s-%s", ext2.StateCode, ext2.LGACode)
+	}
+	if ext2.LegacyPostcode != "100001" {
+		t.Errorf("expected legacy postcode 100001, got %q", ext2.LegacyPostcode)
+	}
+	if ext2.Confidence != "medium" {
+		t.Errorf("expected medium confidence, got %q", ext2.Confidence)
+	}
+}

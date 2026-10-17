@@ -646,4 +646,75 @@ func TestCLI_OfflineMode(t *testing.T) {
 			t.Errorf("expected google maps url in offline map output, got: %s", stdout)
 		}
 	})
+
+	t.Run("nearby offline with --code flag and --json shorthand", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"--offline", "--json", "nearby", "--code", "LA-08-A86-RG-01"}, "")
+		if err != nil {
+			t.Fatalf("offline nearby --code --json failed: %v", err)
+		}
+		if !strings.Contains(stdout, `"results"`) {
+			t.Errorf("expected JSON results in output, got: %s", stdout)
+		}
+	})
 }
+
+func TestCLI_NewFeatures(t *testing.T) {
+	t.Run("format --style slug and --format json", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"format", "--style", "slug", "EK 01 A03 FK 01"}, "")
+		if err != nil {
+			t.Fatalf("format --style slug failed: %v", err)
+		}
+		if strings.TrimSpace(stdout) != "ek-01-a03-fk-01" {
+			t.Errorf("expected ek-01-a03-fk-01, got %q", strings.TrimSpace(stdout))
+		}
+
+		jsonOut, _, err := executeCmd([]string{"format", "--format", "json", "EK 01 A03 FK 01"}, "")
+		if err != nil {
+			t.Fatalf("format --format json failed: %v", err)
+		}
+		if !strings.Contains(jsonOut, `"slug": "ek-01-a03-fk-01"`) {
+			t.Errorf("expected slug in format JSON output, got: %s", jsonOut)
+		}
+	})
+
+	t.Run("diagnose --repair and suggested_fix", func(t *testing.T) {
+		stdout, _, err := executeCmd([]string{"diagnose", "--repair", "EK-1-AO3-FK-1"}, "")
+		if err != nil {
+			t.Fatalf("diagnose --repair failed on repairable input: %v", err)
+		}
+		if !strings.Contains(stdout, "REPAIRED: EK-01-A03-FK-01") {
+			t.Errorf("expected REPAIRED: EK-01-A03-FK-01 in output, got: %s", stdout)
+		}
+	})
+
+	t.Run("extract command text and json", func(t *testing.T) {
+		addr := "Plot 14 Admiralty Way, beside Zenith Bank, Lekki Phase 1, Eti-Osa, Lagos 100001"
+		stdout, _, err := executeCmd([]string{"extract", addr}, "")
+		if err != nil {
+			t.Fatalf("extract command failed: %v", err)
+		}
+		if !strings.Contains(stdout, "Lagos (LA)") || !strings.Contains(stdout, "Eti-Osa (08)") {
+			t.Errorf("expected Lagos (LA) and Eti-Osa (08) in extract output, got: %s", stdout)
+		}
+
+		jsonOut, _, err := executeCmd([]string{"extract", "--json", addr}, "")
+		if err != nil {
+			t.Fatalf("extract --json failed: %v", err)
+		}
+		if !strings.Contains(jsonOut, `"state_code": "LA"`) || !strings.Contains(jsonOut, `"lga_code": "08"`) {
+			t.Errorf("expected state_code LA and lga_code 08 in JSON output, got: %s", jsonOut)
+		}
+	})
+
+	t.Run("batch with --repair and --out/--workers aliases", func(t *testing.T) {
+		csvInput := "id,postcode\n1,EK-1-AO3-FK-1\n"
+		out, _, err := executeCmd([]string{"batch", "--out", "-", "--workers", "2", "--repair", "--column", "postcode"}, csvInput)
+		if err != nil {
+			t.Fatalf("batch --repair failed: %v", err)
+		}
+		if !strings.Contains(out, "1,EK-1-AO3-FK-1,true,EK-01-A03-FK-01") {
+			t.Errorf("expected repaired canonical EK-01-A03-FK-01 in batch output, got: %s", out)
+		}
+	})
+}
+

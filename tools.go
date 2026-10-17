@@ -219,6 +219,52 @@ func DefaultAgentTools() []ToolDef {
 				"required": []string{"code"},
 			},
 		},
+		{
+			Name:        "repair_postcode",
+			Description: "Deterministically self-heals a malformed or noisy Nigerian postcode (padding single-digit segments, fixing '00' to '01', resolving state aliases like 'BE'->'BN', and correcting OCR lookalikes).",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"code": map[string]any{
+						"type":        "string",
+						"description": "Malformed or noisy Nigerian postcode candidate (e.g. 'EK-1-A03-FK-1', 'LA-00-W06-TC-00', 'BE-01-A01-AA-01').",
+					},
+				},
+				"required": []string{"code"},
+			},
+		},
+		{
+			Name:        "extract_address",
+			Description: "Extracts structured Nigerian address entities (postcode, legacy 6-digit code, state, LGA, neighborhood locality, street, landmark anchor, and coordinates) from unstructured text using the 5-stage disambiguation pipeline.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"address": map[string]any{
+						"type":        "string",
+						"description": "Raw unstructured Nigerian address string.",
+					},
+				},
+				"required": []string{"address"},
+			},
+		},
+		{
+			Name:        "calculate_distance",
+			Description: "Calculates the Haversine distance in meters and kilometers between two Nigerian postcodes.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"from_code": map[string]any{
+						"type":        "string",
+						"description": "Origin 11-character Nigerian postcode.",
+					},
+					"to_code": map[string]any{
+						"type":        "string",
+						"description": "Destination 11-character Nigerian postcode.",
+					},
+				},
+				"required": []string{"from_code", "to_code"},
+			},
+		},
 	}
 	sort.Slice(tools, func(i, j int) bool {
 		return tools[i].Name < tools[j].Name
@@ -264,17 +310,21 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 		if err := json.Unmarshal(argsJSON, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
-		p, err := Parse(args.Code)
-		if err != nil {
+		if err := Validate(args.Code); err != nil {
 			report := Diagnose(args.Code)
-			return map[string]any{
+			res := map[string]any{
 				"valid":          false,
 				"input":          args.Code,
 				"error":          err.Error(),
 				"actionable_tip": report.ActionableTip,
 				"clean_length":   report.CleanLength,
-			}, nil
+			}
+			if report.SuggestedFix != "" {
+				res["suggested_fix"] = report.SuggestedFix
+			}
+			return res, nil
 		}
+		p, _ := Parse(args.Code)
 		stateName := ""
 		if rec, ok := NigerianStates[p.State()]; ok {
 			stateName = rec.Name
@@ -283,6 +333,7 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 			"valid":      true,
 			"postcode":   p.Formatted(),
 			"compact":    p.Compact(),
+			"slug":       p.Slug(),
 			"state_code": p.State(),
 			"state_name": stateName,
 			"lga_code":   p.LGA(),
@@ -299,6 +350,67 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
 		return Diagnose(args.Code), nil
+
+	case "repair_postcode":
+		var args struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		p, ok := TryRepair(args.Code)
+		if !ok {
+			report := Diagnose(args.Code)
+			return map[string]any{
+				"repaired":       false,
+				"input":          args.Code,
+				"actionable_tip": report.ActionableTip,
+				"diagnoses":      report.Diagnoses,
+			}, nil
+		}
+		return map[string]any{
+			"repaired": true,
+			"input":    args.Code,
+			"postcode": p.Formatted(),
+			"display":  p.String(),
+			"compact":  p.Compact(),
+			"slug":     p.Slug(),
+		}, nil
+
+	case "extract_address":
+		var args struct {
+			Address string `json:"address"`
+			Raw     string `json:"raw"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		input := args.Address
+		if input == "" {
+			input = args.Raw
+		}
+		return ExtractAddress(input), nil
+
+	case "calculate_distance":
+		var args struct {
+			FromCode string `json:"from_code"`
+			ToCode   string `json:"to_code"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		distM, err := DistanceMeters(args.FromCode, args.ToCode)
+		if err != nil {
+			return nil, err
+		}
+		fromLoc, _ := ResolveLocation(args.FromCode)
+		toLoc, _ := ResolveLocation(args.ToCode)
+		return map[string]any{
+			"from_postcode": fromLoc.Postcode,
+			"to_postcode":   toLoc.Postcode,
+			"distance_m":    distM,
+			"distance_km":   distM / 1000.0,
+		}, nil
 
 	case "resolve_location":
 		var args struct {

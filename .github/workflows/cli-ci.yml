@@ -356,15 +356,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "Submitting package to npm staging area via 'npm stage publish'..."
-          if [ -n "$NODE_AUTH_TOKEN" ]; then
-            npm stage publish --access public --provenance
-            echo "::notice::Package successfully staged on npm! Maintainer approval with 2FA required on npmjs.com or via 'npm stage approve <stage-id>'."
-          elif [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL}" ]; then
-            npm stage publish --access public --provenance || {
-              echo "::warning::npm stage publish via OIDC failed. If using an auth token, ensure NPM_TOKEN secret is configured."
+          echo "Submitting package to npm staging area via 'npm publish'..."
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL}" ]; then
+            npm publish --access public --provenance || {
+              echo "::warning::npm publish via OIDC failed. If using an auth token, ensure NPM_TOKEN secret is configured."
             }
-            echo "::notice::Package staged on npm via Trusted Publishing! Approve with 2FA on npmjs.com or via 'npm stage approve <stage-id>'."
+          elif [ -n "$NODE_AUTH_TOKEN" ]; then
+            npm stage publish --access public --provenance
+            echo "::notice::Package successfully published on npm! Maintainer approval with 2FA required on npmjs.com or via 'npm stage approve <stage-id>'."
+            echo "::notice::Package published on npm via Trusted Publishing! Approve with 2FA on npmjs.com or via 'npm stage approve <stage-id>'."
           else
             echo "::warning::Neither NPM_TOKEN nor OIDC available. Skipping npm stage publish."
           fi

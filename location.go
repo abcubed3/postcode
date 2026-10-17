@@ -190,6 +190,19 @@ func (l Location) Coordinates() (lat, lng float64) {
 	return l.Latitude, l.Longitude
 }
 
+// DistanceTo returns the Haversine distance in meters between this location and other.
+func (l Location) DistanceTo(other Location) float64 {
+	return haversineM(l.Latitude, l.Longitude, other.Latitude, other.Longitude)
+}
+
+// PointGeometry returns a GeoJSON PointGeometry ([longitude, latitude]) for this location.
+func (l Location) PointGeometry() PointGeometry {
+	return PointGeometry{
+		Type:        "Point",
+		Coordinates: []float64{l.Longitude, l.Latitude},
+	}
+}
+
 // SearchQuery produces a descriptive location query string suitable for search engines
 // (e.g. "Ado Ekiti, Ekiti State, Nigeria" or "Abuja Municipal, Federal Capital Territory, Nigeria").
 func (l Location) SearchQuery() string {
@@ -248,4 +261,18 @@ func Coordinates(raw string) (lat, lng float64, err error) {
 		return 0, 0, err
 	}
 	return loc.Latitude, loc.Longitude, nil
+}
+
+// DistanceMeters parses two Nigerian postcode strings and returns the Haversine distance
+// in meters between their resolved geographic coordinates.
+func DistanceMeters(codeA, codeB string) (float64, error) {
+	locA, err := ResolveLocation(codeA)
+	if err != nil {
+		return 0, fmt.Errorf("first postcode: %w", err)
+	}
+	locB, err := ResolveLocation(codeB)
+	if err != nil {
+		return 0, fmt.Errorf("second postcode: %w", err)
+	}
+	return locA.DistanceTo(locB), nil
 }

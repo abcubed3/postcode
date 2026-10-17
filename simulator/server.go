@@ -184,6 +184,9 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		// Set standard official NIPOST rate limit headers (limit: 600)
 		w.Header().Set("X-RateLimit-Limit", "600")
 		w.Header().Set("X-RateLimit-Remaining", "597")
+		if r.Header.Get("X-API-Key") != "" {
+			w.Header().Set("X-Credit-Balance", "995")
+		}
 
 		// Simulation hook: permanent 429 rate limit exceeded (cooldown: 60s)
 		if r.Header.Get("X-Simulate-Rate-Limit-Exceed") != "" {
@@ -213,6 +216,21 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// NewTransport returns an in-memory http.RoundTripper that routes requests directly
+// to the simulator handler without opening TCP sockets.
+func NewTransport() http.RoundTripper {
+	return postcode.NewHandlerTransport(NewHandler())
+}
+
+// NewClient constructs a *postcode.Client wired directly to the in-memory simulator handler.
+// Any additional options (such as WithAPIKey, WithDefaultCache, WithAgentGuard) are applied on top.
+func NewClient(opts ...postcode.ClientOption) (*postcode.Client, error) {
+	baseOpts := make([]postcode.ClientOption, 0, len(opts)+1)
+	baseOpts = append(baseOpts, postcode.WithHandler(NewHandler()))
+	baseOpts = append(baseOpts, opts...)
+	return postcode.NewClient(baseOpts...)
 }
 
 // NewServer starts an in-memory httptest.Server simulating api.postcode.gov.ng.
@@ -336,9 +354,14 @@ func handleAutocomplete(w http.ResponseWriter, r *http.Request) {
 
 	var suggestions []suggestion
 	seen := make(map[string]bool)
+	qCompact := strings.ReplaceAll(strings.ReplaceAll(q, "-", ""), " ", "")
 
+	// Pass 1: Postcode prefix match (canonical, spaced, or compact)
 	for _, rec := range TestPostcodes {
-		if strings.HasPrefix(rec.Canonical, q) || strings.HasPrefix(strings.ReplaceAll(rec.Canonical, "-", " "), q) {
+		recCompact := strings.ReplaceAll(rec.Canonical, "-", "")
+		if strings.HasPrefix(rec.Canonical, q) ||
+			strings.HasPrefix(strings.ReplaceAll(rec.Canonical, "-", " "), q) ||
+			(qCompact != "" && strings.HasPrefix(recCompact, qCompact)) {
 			if !seen[rec.Canonical] {
 				seen[rec.Canonical] = true
 				suggestions = append(suggestions, suggestion{
@@ -349,6 +372,29 @@ func handleAutocomplete(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(suggestions) >= 5 {
 			break
+		}
+	}
+
+	// Pass 2: If fewer than 5 matches, also match against LGA, district, area, or street name
+	if len(suggestions) < 5 {
+		for _, rec := range TestPostcodes {
+			if seen[rec.Canonical] {
+				continue
+			}
+			if strings.Contains(rec.StateName, q) ||
+				strings.Contains(rec.LGAName, q) ||
+				strings.Contains(rec.DistrictName, q) ||
+				strings.Contains(rec.AreaName, q) ||
+				strings.Contains(rec.RecentHouse, q) {
+				seen[rec.Canonical] = true
+				suggestions = append(suggestions, suggestion{
+					Code:  rec.Canonical,
+					Label: rec.RecentHouse,
+				})
+			}
+			if len(suggestions) >= 5 {
+				break
+			}
 		}
 	}
 
