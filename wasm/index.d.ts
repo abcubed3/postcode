@@ -115,6 +115,15 @@ export interface AddressExtraction {
   confidence: 'high' | 'medium' | 'low';
 }
 
+export interface DistanceResult {
+  valid: boolean;
+  distance_m?: number;
+  distance_km?: number;
+  from_postcode?: string;
+  to_postcode?: string;
+  error?: string;
+}
+
 export interface LocationResult {
   postcode: string;
   compact: string;
@@ -286,7 +295,7 @@ export interface PostcodeEngine {
   diagnose(code: string): DiagnosticReport;
   repair(code: string): RepairResult;
   extractAddress(address: string): AddressExtraction;
-  distanceMeters(codeA: string, codeB: string): number | { error: string };
+  distanceMeters(codeA: string, codeB: string): DistanceResult;
   parse(code: string): ParsedPostcode;
   format(code: string, style?: 'canonical' | 'compact' | 'spaced' | 'hyphenated' | 'slug'): string;
   assemble(segments: { state: string; lga: string; district: string; area: string; unit: string }): AssembledPostcode;

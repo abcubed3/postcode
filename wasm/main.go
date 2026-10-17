@@ -1199,17 +1199,37 @@ func jsExtractAddress(this js.Value, args []js.Value) any {
 
 func jsDistanceMeters(this js.Value, args []js.Value) any {
 	if len(args) < 2 {
-		obj := js.Global().Get("Object").New()
-		obj.Set("error", "two postcode arguments (codeA, codeB) are required")
-		return obj
+		return toJS(map[string]any{
+			"valid": false,
+			"error": "two postcode arguments (codeA, codeB) are required",
+		})
 	}
-	distM, err := postcode.DistanceMeters(args[0].String(), args[1].String())
+	codeA := args[0].String()
+	codeB := args[1].String()
+	distM, err := postcode.DistanceMeters(codeA, codeB)
 	if err != nil {
-		obj := js.Global().Get("Object").New()
-		obj.Set("error", err.Error())
-		return obj
+		return toJS(map[string]any{
+			"valid": false,
+			"error": err.Error(),
+		})
 	}
-	return distM
+	locA, _ := postcode.ResolveLocation(codeA)
+	locB, _ := postcode.ResolveLocation(codeB)
+	fromPostcode := codeA
+	if locA.Postcode != "" {
+		fromPostcode = locA.Postcode
+	}
+	toPostcode := codeB
+	if locB.Postcode != "" {
+		toPostcode = locB.Postcode
+	}
+	return toJS(map[string]any{
+		"valid":         true,
+		"distance_m":    distM,
+		"distance_km":   distM / 1000.0,
+		"from_postcode": fromPostcode,
+		"to_postcode":   toPostcode,
+	})
 }
 
 func main() {
