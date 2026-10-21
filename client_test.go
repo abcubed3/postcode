@@ -546,3 +546,48 @@ func TestClient_ReferenceCatalog(t *testing.T) {
 		t.Errorf("unexpected areas: %+v", areas)
 	}
 }
+
+func TestClient_Lookup_TemporaryCode(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/lookup" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if code := r.URL.Query().Get("code"); code != "TP-01-A01-01" {
+			t.Errorf("query param code = %q, want 'TP-01-A01-01'", code)
+		}
+
+		resp := map[string]any{
+			"data": map[string]any{
+				"postcode":  "TP-01-A01-01",
+				"valid":     false,
+				"temporary": true,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	res, err := client.Lookup(context.Background(), "tp_01_a01_01", Level1)
+	if err != nil {
+		t.Fatalf("Lookup failed: %v", err)
+	}
+	if !res.Temporary {
+		t.Errorf("expected res.Temporary=true, got false")
+	}
+	if res.Postcode != "TP-01-A01-01" {
+		t.Errorf("expected Postcode='TP-01-A01-01', got %q", res.Postcode)
+	}
+
+	_, errLoc := client.ResolveLocation(context.Background(), "tp_01_a01_01")
+	if !errors.Is(errLoc, ErrTemporaryCode) {
+		t.Errorf("expected errors.Is(errLoc, ErrTemporaryCode), got %v", errLoc)
+	}
+}

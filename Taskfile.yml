@@ -64,6 +64,11 @@ tasks:
     cmds:
       - go test -v ./... ./cmd/postcode/... ./otelpostcode/...
 
+  test:core:
+      desc: Run unit tests across all modules
+      cmds:
+        - go test -v ./... ./cmd/postcode/... ./otelpostcode/...
+
   test:race:
     desc: Run all tests with Go race detector and generate coverage profile
     cmds:
@@ -94,6 +99,8 @@ tasks:
   test:all:
     desc: Run race-detected unit tests, CLI tests, and WASM test suites
     cmds:
+      - task: test:core
+      - task: test:cli
       - task: test:race
       - task: test:wasm
 

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"strings"
 )
 
 var (
 	ErrInvalidLength = errors.New("postcode: invalid length, must be exactly 11 alphanumeric characters")
 	ErrInvalidFormat = errors.New("postcode: invalid format structure")
+	ErrTemporaryCode = errors.New("postcode: temporary NIPOST code (TP-...) pending survey; resolve via gateway lookup")
 )
 
 var (
@@ -51,6 +53,11 @@ func Parse(raw string) (Postcode, error) {
 
 	if idx != 11 {
 		return Postcode{}, ErrInvalidLength
+	}
+
+	// Temporary codes (TP-...) are placeholders for unsurveyed properties
+	if p.raw[0] == 'T' && p.raw[1] == 'P' {
+		return Postcode{}, ErrTemporaryCode
 	}
 
 	// Grammar: State(2A) LGA(2D) District(3AN) Area(2A) Unit(2D)
@@ -93,6 +100,9 @@ func MustParse(raw string) Postcode {
 // Validate checks that raw is a grammatically valid Nigerian postcode
 // with a recognized Nigerian state or FCT code.
 func Validate(raw string) error {
+	if IsTemporary(raw) {
+		return ErrTemporaryCode
+	}
 	p, err := Parse(raw)
 	if err != nil {
 		return err
@@ -101,6 +111,73 @@ func Validate(raw string) error {
 		return fmt.Errorf("%w: unknown state code %q (not in 36 States + FCT)", ErrInvalidFormat, p.State())
 	}
 	return nil
+}
+
+// IsTemporary reports whether raw is a NIPOST temporary building code (e.g. "TP-...", "TP_...").
+// Temporary codes are minted by NIPOST widgets for unsurveyed buildings and resolve to
+// official 11-character postcodes once field survey indexing is completed.
+func IsTemporary(raw string) bool {
+	s := strings.TrimSpace(raw)
+	if len(s) < 2 {
+		return false
+	}
+	if (s[0] == 'T' || s[0] == 't') && (s[1] == 'P' || s[1] == 'p') {
+		if len(s) == 2 {
+			return true
+		}
+		sep := s[2]
+		if sep == '-' || sep == '_' || sep == ' ' || sep == '/' || sep == '.' {
+			return true
+		}
+		// Compact format without delimiter (e.g. "TP01A0101")
+		for i := 2; i < len(s); i++ {
+			b := s[i]
+			if !isAlnum(b) && b != '-' && b != '_' && b != ' ' {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// IsTemporaryCode is an alias for IsTemporary.
+func IsTemporaryCode(raw string) bool {
+	return IsTemporary(raw)
+}
+
+// FormatTemporary normalizes a temporary code to an uppercase canonical representation prefixed with "TP-".
+// For example, "tp_01_a01_01" becomes "TP-01-A01-01", and "tp-123456" becomes "TP-123456".
+func FormatTemporary(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.Grow(len(s) + 4)
+	lastWasHyphen := false
+
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b == '-' || b == '_' || b == ' ' || b == '/' || b == '.' {
+			if !lastWasHyphen && sb.Len() > 0 {
+				sb.WriteByte('-')
+				lastWasHyphen = true
+			}
+			continue
+		}
+		if b >= 'a' && b <= 'z' {
+			b -= 32
+		}
+		sb.WriteByte(b)
+		lastWasHyphen = false
+	}
+
+	res := sb.String()
+	if strings.HasPrefix(res, "TP") && len(res) > 2 && res[2] != '-' {
+		res = "TP-" + res[2:]
+	}
+	return res
 }
 
 // IsValid reports whether raw is a valid Nigerian postcode with a recognized state code.

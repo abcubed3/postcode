@@ -236,6 +236,33 @@ async function run() {
   assert(qrTool.svg.startsWith('<svg '));
   console.log('✔ generateQR(), qr(), & executeTool("generate_postcode_qr") passed');
 
+  // 22. Temporary Code (TP_... / TP-...) Awareness
+  assert.strictEqual(postcode.isTemporary('TP-01-A01-01'), true);
+  assert.strictEqual(postcode.isTemporary('TP_01_A01_01'), true);
+  assert.strictEqual(postcode.isTemporary('tp-123456'), true);
+  assert.strictEqual(postcode.isTemporary('TP 01 A01 01'), true);
+  assert.strictEqual(postcode.isTemporary('EK-01-A03-FK-01'), false);
+  assert.strictEqual(postcode.isTemporary('100001'), false);
+
+  assert.strictEqual(postcode.formatTemporary('tp_01_a01_01'), 'TP-01-A01-01');
+  assert.strictEqual(postcode.formatTemporary('tp-123456'), 'TP-123456');
+
+  const tpDiag = postcode.diagnose('TP_01_A01_01');
+  assert.strictEqual(tpDiag.valid, false);
+  assert.strictEqual(tpDiag.is_temporary, true);
+  assert.strictEqual(tpDiag.format_score, 50);
+  assert.strictEqual(tpDiag.diagnoses[0].segment, 'TemporaryCode');
+  assert(tpDiag.actionable_tip.includes('GET /v1/lookup'));
+
+  const tpVal = postcode.validate('TP-01-A01-01');
+  assert.strictEqual(tpVal.valid, false);
+  assert.strictEqual(tpVal.is_temporary, true);
+
+  const tpTool = await postcode.executeTool('validate_postcode', { code: 'TP_01_A01_01' });
+  assert.strictEqual(tpTool.valid, false);
+  assert.strictEqual(tpTool.is_temporary, true);
+  console.log('✔ Temporary Code (TP-...) awareness passed');
+
   console.log('\nAll parity verification tests passed successfully! 🎉');
 }
 

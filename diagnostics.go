@@ -20,6 +20,7 @@ type SegmentDiagnosis struct {
 type DiagnosticReport struct {
 	Input         string             `json:"input"`
 	Valid         bool               `json:"valid"`
+	IsTemporary   bool               `json:"is_temporary,omitempty"`   // True if input is a temporary NIPOST building code (TP-...)
 	Normalized    string             `json:"normalized,omitempty"`    // Hyphenated canonical form if valid or recoverable
 	SuggestedFix  string             `json:"suggested_fix,omitempty"` // Auto-repaired canonical postcode when deterministically recoverable
 	CleanLength   int                `json:"clean_length"`            // Number of alphanumeric characters found
@@ -136,7 +137,25 @@ func Diagnose(raw string) DiagnosticReport {
 	}
 	report.CleanLength = len(clean)
 
-	// Special Case A: Legacy 6-digit numeric NIPOST postal code (e.g. "100001", "900001")
+	// Special Case A: Temporary NIPOST building code (e.g. "TP-...", "TP_...")
+	if IsTemporary(report.Input) {
+		report.IsTemporary = true
+		report.Valid = false
+		formatted := FormatTemporary(report.Input)
+		report.Normalized = formatted
+		report.Diagnoses = append(report.Diagnoses, SegmentDiagnosis{
+			Segment:     "TemporaryCode",
+			Input:       report.Input,
+			Expected:    "Official 11-character NIPOST postcode (SS-LL-DDD-AA-UU)",
+			Message:     fmt.Sprintf("Temporary NIPOST building code %q detected; minted for unsurveyed property awaiting cadastral indexing.", report.Input),
+			Suggestions: []string{"Resolve via NIPOST gateway: GET /v1/lookup?code=" + formatted},
+		})
+		report.ActionableTip = fmt.Sprintf("Temporary code %q detected (pending survey). Query live gateway (postcode lookup %s or GET /v1/lookup) to check if an official 11-character postcode has been assigned.", report.Input, formatted)
+		report.FormatScore = 50.0
+		return report
+	}
+
+	// Special Case B: Legacy 6-digit numeric NIPOST postal code (e.g. "100001", "900001")
 	if len(clean) == 6 && isAllDigits(clean) {
 		cleanStr := string(clean)
 		var suggestions []string
@@ -170,7 +189,7 @@ func Diagnose(raw string) DiagnosticReport {
 		return report
 	}
 
-	// Special Case B: 5 delimited tokens where LGA or BuildingUnit is an unpadded single digit (e.g. "EK-1-A03-FK-1")
+	// Special Case C: 5 delimited tokens where LGA or BuildingUnit is an unpadded single digit (e.g. "EK-1-A03-FK-1")
 	if tokens := splitDelimitedTokens(report.Input); len(tokens) == 5 && (len(tokens[1]) == 1 || len(tokens[4]) == 1) &&
 		len(tokens[0]) == 2 && len(tokens[2]) == 3 && len(tokens[3]) == 2 {
 		if len(tokens[1]) == 1 && isDigit(tokens[1][0]) {

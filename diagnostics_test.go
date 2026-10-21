@@ -187,3 +187,33 @@ func TestTryRepairAndRepair(t *testing.T) {
 		t.Errorf("expected error from Repair on unrecoverable input")
 	}
 }
+
+func TestDiagnoseTemporaryCode(t *testing.T) {
+	report := Diagnose("TP_01_A01_01")
+	if report.Valid {
+		t.Errorf("expected temporary code to have Valid=false, got true")
+	}
+	if !report.IsTemporary {
+		t.Errorf("expected IsTemporary=true, got false")
+	}
+	if report.Normalized != "TP-01-A01-01" {
+		t.Errorf("expected Normalized='TP-01-A01-01', got %q", report.Normalized)
+	}
+	if report.FormatScore != 50.0 {
+		t.Errorf("expected FormatScore=50.0, got %f", report.FormatScore)
+	}
+	if len(report.Diagnoses) == 0 || report.Diagnoses[0].Segment != "TemporaryCode" {
+		t.Fatalf("expected Segment='TemporaryCode', got %+v", report.Diagnoses)
+	}
+	if !strings.Contains(report.ActionableTip, "GET /v1/lookup") {
+		t.Errorf("expected ActionableTip to mention 'GET /v1/lookup', got %q", report.ActionableTip)
+	}
+
+	report2 := Diagnose("tp-123456")
+	if !report2.IsTemporary || report2.Valid {
+		t.Errorf("unexpected report for 'tp-123456': %+v", report2)
+	}
+	if report2.Normalized != "TP-123456" {
+		t.Errorf("expected Normalized='TP-123456', got %q", report2.Normalized)
+	}
+}

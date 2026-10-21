@@ -78,6 +78,7 @@ type PointGeometry struct {
 type LookupResponse struct {
 	Postcode              string                 `json:"postcode"`
 	Valid                 bool                   `json:"valid"`
+	Temporary             bool                   `json:"temporary,omitempty"`
 	AdministrativeAddress *AdministrativeAddress `json:"administrative_address,omitempty"`
 	RecentHouseAddress    *RecentHouseAddress    `json:"recent_house_address,omitempty"`
 	BuildingUseStatus     string                 `json:"building_use_status,omitempty"`
@@ -100,6 +101,8 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 	normCode := code
 	if p, err := Parse(code); err == nil {
 		normCode = p.Formatted()
+	} else if IsTemporary(code) {
+		normCode = FormatTemporary(code)
 	}
 
 	if c.cache != nil {
@@ -168,6 +171,9 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, error) {
 	p, err := Parse(code)
 	if err != nil {
+		if IsTemporary(code) {
+			return nil, fmt.Errorf("%w: cannot resolve location offline; query live gateway /v1/lookup to obtain assigned postcode or coordinates", ErrTemporaryCode)
+		}
 		return nil, fmt.Errorf("postcode: invalid code %q: %w", code, err)
 	}
 
@@ -301,8 +307,9 @@ type NearbyUnit struct {
 	DistanceM  float64 `json:"distance_m"`
 	Confidence string  `json:"confidence"`
 	StateName  string  `json:"state_name,omitempty"`
-	LGAName    string  `json:"lga_name,omitempty"`
-	Address    string  `json:"address,omitempty"`
+	LGAName      string  `json:"lga_name,omitempty"`
+	LocalityName string  `json:"locality_name,omitempty"`
+	Address      string  `json:"address,omitempty"`
 }
 
 // NearbyResponse contains location units within the requested radius.

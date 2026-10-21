@@ -13,6 +13,7 @@ type LookupOutputItem struct {
 	Input                 string                          `json:"input"`
 	Postcode              string                          `json:"postcode"`
 	Valid                 bool                            `json:"valid"`
+	Temporary             bool                            `json:"temporary,omitempty"`
 	Level                 int                             `json:"level"`
 	Source                string                          `json:"source"`
 	AdministrativeAddress *postcode.AdministrativeAddress `json:"administrative_address,omitempty"`
@@ -73,6 +74,14 @@ will gracefully enrich the response using local reference data.`,
 
 			for _, raw := range inputs {
 				if offlineMode {
+					if postcode.IsTemporary(raw) {
+						res.Results = append(res.Results, LookupOutputItem{
+							Input: raw,
+							Valid: false,
+							Error: "temporary NIPOST code (TP-...) cannot be resolved offline; requires online gateway lookup",
+						})
+						continue
+					}
 					p, parseErr := postcode.Parse(raw)
 					if parseErr != nil {
 						res.Results = append(res.Results, LookupOutputItem{
@@ -113,6 +122,14 @@ will gracefully enrich the response using local reference data.`,
 				resp, lookupErr := client.Lookup(cmd.Context(), raw, postcode.LookupLevel(level))
 				if lookupErr != nil {
 					if offlineFallback {
+						if postcode.IsTemporary(raw) {
+							res.Results = append(res.Results, LookupOutputItem{
+								Input: raw,
+								Valid: false,
+								Error: fmt.Sprintf("temporary code lookup failed: %v", lookupErr),
+							})
+							continue
+						}
 						// Offline graceful fallback
 						p, parseErr := postcode.Parse(raw)
 						if parseErr != nil {
@@ -157,6 +174,7 @@ will gracefully enrich the response using local reference data.`,
 					Input:                 raw,
 					Postcode:              resp.Postcode,
 					Valid:                 resp.Valid,
+					Temporary:             resp.Temporary,
 					Level:                 level,
 					Source:                "gateway",
 					AdministrativeAddress: resp.AdministrativeAddress,
@@ -175,6 +193,8 @@ will gracefully enrich the response using local reference data.`,
 					status := "VALID"
 					if !r.Valid {
 						status = "INVALID"
+					} else if r.Temporary {
+						status = "TEMPORARY"
 					}
 					displayCode := r.Postcode
 					if displayCode == "" {

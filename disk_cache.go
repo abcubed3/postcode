@@ -376,9 +376,10 @@ func SearchNearbyBuildingsOffline(lat, lng, radiusM float64) []NearbyUnit {
 				Display:    display,
 				DistanceM:  math.Round(dist*10) / 10,
 				Confidence: conf,
-				StateName:  b.StateName,
-				LGAName:    b.LGAName,
-				Address:    b.Address,
+				StateName:    b.StateName,
+				LGAName:      b.LGAName,
+				LocalityName: b.LGAName,
+				Address:      b.Address,
 			})
 		}
 	}

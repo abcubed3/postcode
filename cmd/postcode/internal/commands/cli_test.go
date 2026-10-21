@@ -100,6 +100,12 @@ func TestCLI_Validate(t *testing.T) {
 			wantOutput: "unknown state code \"XX\"",
 		},
 		{
+			name:       "temporary code validation notice",
+			args:       []string{"validate", "TP-01-A01-01"},
+			wantErr:    true,
+			wantOutput: "temporary NIPOST code (TP-...)",
+		},
+		{
 			name:       "stdin streaming input",
 			args:       []string{"validate"},
 			stdin:      "EK-01-A03-FK-01\nLA-11-W06-TC-10\n",
@@ -428,6 +434,19 @@ func TestCLI_Diagnose(t *testing.T) {
 		}
 		if !strings.Contains(out, `"valid": true`) {
 			t.Errorf("expected valid: true in JSON output, got: %s", out)
+		}
+	})
+
+	t.Run("temporary code awareness", func(t *testing.T) {
+		out, _, err := executeCmd([]string{"diagnose", "TP_01_A01_01"}, "")
+		if err == nil {
+			t.Fatal("expected error exit for temporary postcode (not official)")
+		}
+		if !strings.Contains(out, "TEMPORARY CODE") {
+			t.Errorf("expected TEMPORARY CODE in output, got: %s", out)
+		}
+		if !strings.Contains(out, "Action:") {
+			t.Errorf("expected Action in output, got: %s", out)
 		}
 	})
 }

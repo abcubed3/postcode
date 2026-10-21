@@ -67,6 +67,16 @@ func TestAgentDispatcherOffline(t *testing.T) {
 		t.Errorf("expected valid=false, got %+v", resInv)
 	}
 
+	// 2b. validate_postcode (temporary code)
+	resTP, err := dispatcher.Dispatch(ctx, "validate_postcode", []byte(`{"code":"TP-01-A01-01"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tpMap, ok := resTP.(map[string]any)
+	if !ok || tpMap["valid"] != false || tpMap["is_temporary"] != true {
+		t.Errorf("expected is_temporary=true and valid=false, got %+v", resTP)
+	}
+
 	// 3. diagnose_postcode
 	resDiag, err := dispatcher.Dispatch(ctx, "diagnose_postcode", []byte(`{"code":"EK 00 A03 FK 01"}`))
 	if err != nil {

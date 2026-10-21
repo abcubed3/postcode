@@ -93,6 +93,9 @@ func validateSingle(code string) js.Value {
 		obj.Set("error", err.Error())
 		obj.Set("actionable_tip", diag.ActionableTip)
 		obj.Set("clean_length", diag.CleanLength)
+		if diag.IsTemporary {
+			obj.Set("is_temporary", true)
+		}
 		return obj
 	}
 
@@ -146,6 +149,20 @@ func jsDiagnose(this js.Value, args []js.Value) any {
 	}
 	report := postcode.Diagnose(args[0].String())
 	return toJS(report)
+}
+
+func jsIsTemporary(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return false
+	}
+	return postcode.IsTemporary(args[0].String())
+}
+
+func jsFormatTemporary(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		return ""
+	}
+	return postcode.FormatTemporary(args[0].String())
 }
 
 func jsParse(this js.Value, args []js.Value) any {
@@ -1334,6 +1351,8 @@ func main() {
 	postcodeObj.Set("validate", js.FuncOf(jsValidate))
 	postcodeObj.Set("validateBatch", js.FuncOf(jsValidateBatch))
 	postcodeObj.Set("diagnose", js.FuncOf(jsDiagnose))
+	postcodeObj.Set("isTemporary", js.FuncOf(jsIsTemporary))
+	postcodeObj.Set("formatTemporary", js.FuncOf(jsFormatTemporary))
 	postcodeObj.Set("repair", js.FuncOf(jsRepair))
 	postcodeObj.Set("extractAddress", js.FuncOf(jsExtractAddress))
 	postcodeObj.Set("distanceMeters", js.FuncOf(jsDistanceMeters))

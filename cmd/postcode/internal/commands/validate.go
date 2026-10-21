@@ -68,6 +68,15 @@ Exit code is 0 if all postcodes are valid, or 1 if any invalid code is found.`,
 			}
 
 			for _, raw := range inputs {
+				if postcode.IsTemporary(raw) {
+					res.Invalid++
+					res.Results = append(res.Results, ValidationRecord{
+						Input:  raw,
+						Valid:  false,
+						Reason: "temporary NIPOST code (TP-...); pending cadastral survey, resolve via 'postcode lookup'",
+					})
+					continue
+				}
 				p, parseErr := postcode.Parse(raw)
 				if parseErr != nil {
 					res.Invalid++

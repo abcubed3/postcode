@@ -88,6 +88,15 @@ designed for humans and AI agents.`,
 						} else {
 							_, _ = fmt.Fprintf(w, "✓ %-16s -> VALID: %s\n", r.Input, r.Normalized)
 						}
+					} else if r.IsTemporary {
+						_, _ = fmt.Fprintf(w, "ℹ %-16s -> TEMPORARY CODE (Pending Survey)\n", r.Input)
+						for _, d := range r.Diagnoses {
+							_, _ = fmt.Fprintf(w, "    [%s] %s\n", d.Segment, d.Message)
+							if len(d.Suggestions) > 0 {
+								_, _ = fmt.Fprintf(w, "      Suggestions: %s\n", strings.Join(d.Suggestions, ", "))
+							}
+						}
+						_, _ = fmt.Fprintf(w, "    Action: %s\n", r.ActionableTip)
 					} else {
 						_, _ = fmt.Fprintf(w, "✗ %-16s -> INVALID (%d/11 chars)\n", r.Input, r.CleanLength)
 						for _, d := range r.Diagnoses {

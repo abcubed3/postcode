@@ -152,13 +152,13 @@ func DefaultAgentTools() []ToolDef {
 		},
 		{
 			Name:        "lookup_postcode",
-			Description: "Queries the NIPOST gateway for graded attributes of a postcode (Level 1 free validity check, Levels 2-3 commercial addresses and building use, Levels 4-5 building metadata and geometry).",
+			Description: "Queries the NIPOST gateway for graded attributes of an official 11-character postcode or temporary building code (TP-...) (Level 1 free validity check, Levels 2-3 commercial addresses and building use, Levels 4-5 building metadata and geometry).",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"code": map[string]any{
 						"type":        "string",
-						"description": "Nigerian postcode to look up.",
+						"description": "Nigerian postcode or temporary code (TP-...) to look up.",
 					},
 					"level": map[string]any{
 						"type":        "integer",
@@ -356,6 +356,9 @@ func (d *AgentDispatcher) Dispatch(ctx context.Context, name string, argsJSON []
 				"error":          err.Error(),
 				"actionable_tip": report.ActionableTip,
 				"clean_length":   report.CleanLength,
+			}
+			if report.IsTemporary {
+				res["is_temporary"] = true
 			}
 			if report.SuggestedFix != "" {
 				res["suggested_fix"] = report.SuggestedFix

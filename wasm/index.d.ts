@@ -15,6 +15,7 @@ export interface ValidationResult {
   error?: string;
   actionable_tip?: string;
   clean_length?: number;
+  is_temporary?: boolean;
 }
 
 export interface BuildingRecord {
@@ -67,7 +68,7 @@ export interface ParsedPostcode {
 }
 
 export interface SegmentDiagnosis {
-  segment: 'Length' | 'LegacyFormat' | 'State' | 'LGA' | 'District' | 'Area' | 'BuildingUnit';
+  segment: 'Length' | 'LegacyFormat' | 'TemporaryCode' | 'State' | 'LGA' | 'District' | 'Area' | 'BuildingUnit';
   input: string;
   expected: string;
   message: string;
@@ -77,6 +78,7 @@ export interface SegmentDiagnosis {
 export interface DiagnosticReport {
   input: string;
   valid: boolean;
+  is_temporary?: boolean;
   normalized?: string;
   suggested_fix?: string;
   clean_length: number;
@@ -176,6 +178,7 @@ export interface PointGeometry {
 export interface LookupResponse {
   postcode: string;
   valid: boolean;
+  temporary?: boolean;
   administrative_address?: AdministrativeAddress;
   recent_house_address?: RecentHouseAddress;
   building_use_status?: string;
@@ -201,6 +204,7 @@ export interface NearbyUnit {
   confidence: string;
   state_name?: string;
   lga_name?: string;
+  locality_name?: string;
   address?: string;
 }
 
@@ -340,6 +344,8 @@ export interface PostcodeEngine {
   validate(code: string): ValidationResult;
   validateBatch(codes: string[]): ValidationResult[];
   diagnose(code: string): DiagnosticReport;
+  isTemporary(code: string): boolean;
+  formatTemporary(code: string): string;
   repair(code: string): RepairResult;
   extractAddress(address: string): AddressExtraction;
   distanceMeters(codeA: string, codeB: string): DistanceResult;

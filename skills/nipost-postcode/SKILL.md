@@ -30,6 +30,9 @@ $$\mathbf{\underbrace{LA}_{\text{State}}-\underbrace{11}_{\text{LGA}}-\underbrac
 > [!WARNING]
 > **Deprecated 6-Digit Codes**: Older 6-digit numeric codes (e.g., `100001` for Ikeja) were phased out under the modern national alphanumeric cadastral system. Always guide users to the canonical 11-character format.
 
+> [!NOTE]
+> **Temporary Codes (`TP-...` / `TP_...`)**: Embeddable NIPOST widgets mint temporary postcodes prefixed with `TP-` or `TP_` for unsurveyed properties awaiting official cadastral indexing (`temporary: true`). They do not conform to the 11-character administrative scheme (no State/LGA segments). Use `postcode.IsTemporary()` or `diagnose_postcode` to identify them, and resolve to an official 11-character postcode once surveyed via live gateway lookup (`GET /v1/lookup?code=TP-...`).
+
 ---
 
 ## 2. Tooling Selection Matrix

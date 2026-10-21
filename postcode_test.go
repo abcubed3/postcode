@@ -348,3 +348,50 @@ func TestNDPAMaskingAndRedaction(t *testing.T) {
 	}
 }
 
+func TestTemporaryCodes(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"TP-01-A01-01", true},
+		{"TP_01_A01_01", true},
+		{"tp-123456", true},
+		{"tp_998877", true},
+		{"TP 01 A01 01", true},
+		{"TP01A0101", true},
+		{"EK-01-A03-FK-01", false},
+		{"100001", false},
+		{"LA-11-W06-TC-10", false},
+		{"", false},
+	}
+
+	for _, tc := range cases {
+		if got := IsTemporary(tc.input); got != tc.want {
+			t.Errorf("IsTemporary(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+		if got := IsTemporaryCode(tc.input); got != tc.want {
+			t.Errorf("IsTemporaryCode(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+
+	if got := FormatTemporary("tp_01_a01_01"); got != "TP-01-A01-01" {
+		t.Errorf("FormatTemporary('tp_01_a01_01') = %q, want 'TP-01-A01-01'", got)
+	}
+	if got := FormatTemporary("tp-123456"); got != "TP-123456" {
+		t.Errorf("FormatTemporary('tp-123456') = %q, want 'TP-123456'", got)
+	}
+	if got := FormatTemporary("tp 01 a01 01"); got != "TP-01-A01-01" {
+		t.Errorf("FormatTemporary('tp 01 a01 01') = %q, want 'TP-01-A01-01'", got)
+	}
+
+	errVal := Validate("TP-01-A01-01")
+	if !errors.Is(errVal, ErrTemporaryCode) {
+		t.Errorf("Validate('TP-01-A01-01') error = %v, want errors.Is(..., ErrTemporaryCode)", errVal)
+	}
+
+	_, errParse := Parse("TP-01-A01-AA-01")
+	if !errors.Is(errParse, ErrTemporaryCode) {
+		t.Errorf("Parse('TP-01-A01-AA-01') error = %v, want errors.Is(..., ErrTemporaryCode)", errParse)
+	}
+}
+
