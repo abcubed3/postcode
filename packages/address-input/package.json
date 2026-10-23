@@ -52,7 +52,7 @@
   "author": "abcubed3",
   "license": "MIT",
   "dependencies": {
-    "@abcubed3/postcode-wasm": "^1.0.0"
+    "@abcubed3/postcode-wasm": "^0.2.4"
   },
   "devDependencies": {
     "happy-dom": "^21.0.4",

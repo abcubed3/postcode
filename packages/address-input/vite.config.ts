@@ -6,6 +6,7 @@ export default defineConfig({
   resolve: {
     alias: {
       'happy-dom': resolve(__dirname, 'node_modules/happy-dom'),
+      '@abcubed3/postcode-wasm': resolve(__dirname, '../../wasm/index.js'),
     },
   },
   build: {

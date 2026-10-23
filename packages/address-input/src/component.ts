@@ -11,7 +11,7 @@ import type {
 } from './types';
 import { getLGAsForState, findNearestLGA } from './data/lgas';
 
-const DEFAULT_WASM_VERSION = '1.0.0';
+const DEFAULT_WASM_VERSION = 'latest';
 const DEFAULT_WASM_CDN_URL = `https://unpkg.com/@abcubed3/postcode-wasm@${DEFAULT_WASM_VERSION}/postcode.wasm`;
 const DEFAULT_WASM_EXEC_CDN_URL = `https://unpkg.com/@abcubed3/postcode-wasm@${DEFAULT_WASM_VERSION}/wasm_exec.js`;
 
