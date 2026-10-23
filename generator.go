@@ -3,7 +3,6 @@ package postcode
 import (
 	"fmt"
 	"math/rand/v2"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -217,10 +216,6 @@ type stateMatcherEntry struct {
 }
 
 var (
-	postcodeRegex  = regexp.MustCompile(`\b([A-Za-z]{2})[\s\-]?([0-9]{2})[\s\-]?([A-Za-z0-9]{3})[\s\-]?([A-Za-z]{2})[\s\-]?([0-9]{2})\b`)
-	legacyRegex    = regexp.MustCompile(`\b([0-9]{6})\b`)
-	stateCodeRegex = regexp.MustCompile(`\b(AB|AD|AK|AN|BA|BY|BN|BO|CR|DE|EB|ED|EK|EN|FC|GO|IM|JI|KD|KN|KT|KE|KO|KW|LA|NA|NI|OG|ON|OS|OY|PL|RI|SO|TA|YO|ZA)\b`)
-
 	sortedStateEntries = func() []stateMatcherEntry {
 		entries := make([]stateMatcherEntry, 0, len(NigerianStates))
 		for _, info := range NigerianStates {

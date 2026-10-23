@@ -27,9 +27,11 @@ coverage.html
 .env.example
 .env
 
+# Dependencies
+node_modules/
+
 # Notes
 *.notes.txt
-
-output/
-demo/
-pitch/
+/demo/
+/output/
+/pitch/

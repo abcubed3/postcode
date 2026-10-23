@@ -1,0 +1,64 @@
+{
+  "name": "@abcubed3/nipost-address-input",
+  "version": "1.0.0",
+  "description": "Lightweight, embeddable Nigerian address & NIPOST postcode Web Component powered by @abcubed3/postcode-wasm",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./standalone": "./dist/nipost-address-input.min.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abcubed3/postcode.git",
+    "directory": "packages/address-input"
+  },
+  "homepage": "https://github.com/abcubed3/postcode/tree/main/packages/address-input#readme",
+  "bugs": {
+    "url": "https://github.com/abcubed3/postcode/issues"
+  },
+  "scripts": {
+    "dev": "vite --open",
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "nipost",
+    "nigeria",
+    "postcode",
+    "address",
+    "web-component",
+    "custom-elements",
+    "address-autocomplete",
+    "checkout",
+    "form",
+    "tailwind",
+    "abcubed3"
+  ],
+  "author": "abcubed3",
+  "license": "MIT",
+  "dependencies": {
+    "@abcubed3/postcode-wasm": "^1.0.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^21.0.4",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^3.0.0"
+  }
+}

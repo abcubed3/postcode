@@ -394,4 +394,3 @@ func TestTemporaryCodes(t *testing.T) {
 		t.Errorf("Parse('TP-01-A01-AA-01') error = %v, want errors.Is(..., ErrTemporaryCode)", errParse)
 	}
 }
-

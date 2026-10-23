@@ -2,9 +2,7 @@ package postcode
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -146,7 +144,7 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 
 	var res LookupResponse
 	endpoint := []string{"v1", "lookup"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		if apiErr, ok := err.(*APIError); ok && (apiErr.StatusCode == 402 || apiErr.StatusCode == 403) && effectiveLevel > Level1 && c.agentGuard != nil && c.agentGuard.cfg.AutoDowngradeToLevel1 {
 			c.agentGuard.recordDowngrade()
 			return c.Lookup(ctx, code, Level1)
@@ -285,7 +283,7 @@ func (c *Client) Autocomplete(ctx context.Context, query string) (*AutocompleteR
 
 	var res AutocompleteResponse
 	endpoint := []string{"v1", "search", "autocomplete"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 
@@ -302,11 +300,11 @@ type NearbyParams struct {
 
 // NearbyUnit represents a building unit found near a coordinate.
 type NearbyUnit struct {
-	Postcode   string  `json:"postcode"`
-	Display    string  `json:"display"`
-	DistanceM  float64 `json:"distance_m"`
-	Confidence string  `json:"confidence"`
-	StateName  string  `json:"state_name,omitempty"`
+	Postcode     string  `json:"postcode"`
+	Display      string  `json:"display"`
+	DistanceM    float64 `json:"distance_m"`
+	Confidence   string  `json:"confidence"`
+	StateName    string  `json:"state_name,omitempty"`
 	LGAName      string  `json:"lga_name,omitempty"`
 	LocalityName string  `json:"locality_name,omitempty"`
 	Address      string  `json:"address,omitempty"`
@@ -315,24 +313,6 @@ type NearbyUnit struct {
 // NearbyResponse contains location units within the requested radius.
 type NearbyResponse struct {
 	Results []NearbyUnit `json:"results"`
-}
-
-// UnmarshalJSON supports both a direct slice of units `[...]` (returned by live NIPOST Gateway)
-// and an object payload `{"results": [...]}` (returned by simulators/proxies).
-func (r *NearbyResponse) UnmarshalJSON(data []byte) error {
-	var units []NearbyUnit
-	if err := json.Unmarshal(data, &units); err == nil {
-		r.Results = units
-		return nil
-	}
-
-	type alias NearbyResponse
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	r.Results = a.Results
-	return nil
 }
 
 // Nearby searches for active postcode units within a radius (default 300m) of a coordinate or reference postcode.
@@ -361,7 +341,7 @@ func (c *Client) Nearby(ctx context.Context, params NearbyParams) (*NearbyRespon
 
 	var res NearbyResponse
 	endpoint := []string{"v1", "search", "nearby"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 
@@ -406,7 +386,7 @@ func (c *Client) Reverse(ctx context.Context, params ReverseParams) (*ReverseRes
 
 	var res ReverseResponse
 	endpoint := []string{"v1", "search", "reverse"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 
@@ -444,7 +424,7 @@ func (c *Client) Assemble(ctx context.Context, segs Segments) (*AssembledPostcod
 	normalized := NormalizeSegments(segs)
 	var res AssembledPostcode
 	endpoint := []string{"v1", "assembly", "assemble"}
-	if err := c.execute(ctx, http.MethodPost, endpoint, nil, normalized, &res); err != nil {
+	if err := c.execute(ctx, "POST", endpoint, nil, normalized, &res); err != nil {
 		return nil, err
 	}
 
@@ -458,7 +438,7 @@ func (c *Client) Disassemble(ctx context.Context, code string) (*Segments, error
 
 	var res Segments
 	endpoint := []string{"v1", "assembly", "disassemble"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 
@@ -469,7 +449,7 @@ func (c *Client) Disassemble(ctx context.Context, code string) (*Segments, error
 // Returns nil if the gateway responds with HTTP 200 OK.
 func (c *Client) Health(ctx context.Context) error {
 	endpoint := []string{"healthz"}
-	return c.execute(ctx, http.MethodGet, endpoint, nil, nil, nil)
+	return c.execute(ctx, "GET", endpoint, nil, nil, nil)
 }
 
 // NormalizeSegments trims whitespace, converts alpha segments to uppercase,
@@ -521,76 +501,16 @@ type referenceStatesResponse struct {
 	States []NamedCode `json:"states"`
 }
 
-func (r *referenceStatesResponse) UnmarshalJSON(data []byte) error {
-	var list []NamedCode
-	if err := json.Unmarshal(data, &list); err == nil {
-		r.States = list
-		return nil
-	}
-	type alias referenceStatesResponse
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	r.States = a.States
-	return nil
-}
-
 type referenceLGAsResponse struct {
 	LGAs []NamedCode `json:"lgas"`
-}
-
-func (r *referenceLGAsResponse) UnmarshalJSON(data []byte) error {
-	var list []NamedCode
-	if err := json.Unmarshal(data, &list); err == nil {
-		r.LGAs = list
-		return nil
-	}
-	type alias referenceLGAsResponse
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	r.LGAs = a.LGAs
-	return nil
 }
 
 type referenceDistrictsResponse struct {
 	Districts []NamedCode `json:"districts"`
 }
 
-func (r *referenceDistrictsResponse) UnmarshalJSON(data []byte) error {
-	var list []NamedCode
-	if err := json.Unmarshal(data, &list); err == nil {
-		r.Districts = list
-		return nil
-	}
-	type alias referenceDistrictsResponse
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	r.Districts = a.Districts
-	return nil
-}
-
 type referenceAreasResponse struct {
 	Areas []NamedCode `json:"areas"`
-}
-
-func (r *referenceAreasResponse) UnmarshalJSON(data []byte) error {
-	var list []NamedCode
-	if err := json.Unmarshal(data, &list); err == nil {
-		r.Areas = list
-		return nil
-	}
-	type alias referenceAreasResponse
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	r.Areas = a.Areas
-	return nil
 }
 
 // ReferenceStates queries the official precomputed catalog for all 37 Nigerian states (GET /v1/reference/states).
@@ -598,7 +518,7 @@ func (r *referenceAreasResponse) UnmarshalJSON(data []byte) error {
 func (c *Client) ReferenceStates(ctx context.Context) ([]NamedCode, error) {
 	var res referenceStatesResponse
 	endpoint := []string{"v1", "reference", "states"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, nil, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, nil, nil, &res); err != nil {
 		return nil, err
 	}
 	return res.States, nil
@@ -614,7 +534,7 @@ func (c *Client) ReferenceLGAs(ctx context.Context, state string) ([]NamedCode, 
 	q.Set("state", strings.ToUpper(strings.TrimSpace(state)))
 	var res referenceLGAsResponse
 	endpoint := []string{"v1", "reference", "lgas"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 	return res.LGAs, nil
@@ -635,7 +555,7 @@ func (c *Client) ReferenceDistricts(ctx context.Context, state, lga string) ([]N
 	q.Set("lga", lgaNorm)
 	var res referenceDistrictsResponse
 	endpoint := []string{"v1", "reference", "districts"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 	return res.Districts, nil
@@ -657,7 +577,7 @@ func (c *Client) ReferenceAreas(ctx context.Context, state, lga, district string
 	q.Set("district", strings.ToUpper(strings.TrimSpace(district)))
 	var res referenceAreasResponse
 	endpoint := []string{"v1", "reference", "areas"}
-	if err := c.execute(ctx, http.MethodGet, endpoint, q, nil, &res); err != nil {
+	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		return nil, err
 	}
 	return res.Areas, nil

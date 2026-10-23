@@ -263,6 +263,27 @@ async function run() {
   assert.strictEqual(tpTool.is_temporary, true);
   console.log('✔ Temporary Code (TP-...) awareness passed');
 
+  // 23. Zero-dependency PNG Data URI Verification & Concurrent Loader Deduplication
+  const zlib = require('zlib');
+  const pngB64 = qrDefault.data_uri.slice('data:image/png;base64,'.length);
+  const pngBuf = Buffer.from(pngB64, 'base64');
+  // Verify PNG 8-byte magic header: 89 50 4E 47 0D 0A 1A 0A
+  assert.strictEqual(pngBuf.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.strictEqual(pngBuf.subarray(12, 16).toString('ascii'), 'IHDR');
+  // Locate IDAT chunk and verify zlib decompression succeeds
+  const idatIdx = pngBuf.indexOf(Buffer.from('IDAT', 'ascii'));
+  assert(idatIdx > 0);
+  const idatLen = pngBuf.readUInt32BE(idatIdx - 4);
+  const idatPayload = pngBuf.subarray(idatIdx + 4, idatIdx + 4 + idatLen);
+  const inflated = zlib.inflateSync(idatPayload);
+  assert(inflated.length > 0);
+
+  // Verify concurrent initPostcode() calls return the same singleton instance
+  const [p1, p2] = await Promise.all([initPostcode(), initPostcode()]);
+  assert.strictEqual(p1, postcode);
+  assert.strictEqual(p2, postcode);
+  console.log('✔ PNG binary integrity & concurrent initPostcode() deduplication passed');
+
   console.log('\nAll parity verification tests passed successfully! 🎉');
 }
 

@@ -10,6 +10,7 @@ This directory contains real-world, executable examples demonstrating core, adva
 | [`ai_agent_guardrails/`](./../examples/ai_agent_guardrails/main.go) | **AI Agent Safety** | Autonomous logistics dispatcher agent demonstrating session call ceilings, in-memory caching, auto-downgrade to free Level 1, and offline fallback. | `go run ./examples/ai_agent_guardrails/main.go` |
 | [`ai_synthetic_eval/`](./../examples/ai_synthetic_eval/main.go) | **AI Benchmarking** | Synthetic address generator and evaluation harness benchmark testing extraction accuracy against noisy Nigerian addresses with landmarks, typos, and format variations. | `go run ./examples/ai_synthetic_eval/main.go` |
 | [`wasm_node/`](./../examples/wasm_node/demo.js) | **Edge / WebAssembly** | Running the zero-dependency compiled WebAssembly binary inside Node.js for sub-millisecond offline validation and geocoding. | `node ./examples/wasm_node/demo.js` |
+| [`address_input_web/`](./../examples/address_input_web/index.html) | **Web Client Component** | Embedding `<nipost-address-input>` in an HTML checkout form with smart extraction, 774 LGA centroids, and form submission. | `open ./examples/address_input_web/index.html` |
 
 ## Running All Examples
 
@@ -25,4 +26,7 @@ go run ./examples/ai_synthetic_eval/main.go
 
 # 4. WebAssembly in Node.js
 node ./examples/wasm_node/demo.js
+
+# 5. Web Client Component (Browser Checkout Form)
+open ./examples/address_input_web/index.html # or npx serve ./examples/address_input_web
 ```

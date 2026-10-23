@@ -2,10 +2,10 @@ package postcode
 
 import (
 	"encoding"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -31,8 +31,6 @@ const (
 var (
 	_ encoding.TextMarshaler   = Precision(0)
 	_ encoding.TextUnmarshaler = (*Precision)(nil)
-	_ json.Marshaler           = Precision(0)
-	_ json.Unmarshaler         = (*Precision)(nil)
 )
 
 // String returns the human-readable description of the precision level.
@@ -87,11 +85,11 @@ func (p *Precision) UnmarshalJSON(data []byte) error {
 	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' {
 		return p.UnmarshalText(data[1 : len(data)-1])
 	}
-	var n uint8
-	if err := json.Unmarshal(data, &n); err != nil {
+	n, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 8)
+	if err != nil {
 		return err
 	}
-	if n > uint8(PrecisionState) {
+	if n > uint64(PrecisionState) {
 		return fmt.Errorf("postcode: invalid precision number %d", n)
 	}
 	*p = Precision(n)

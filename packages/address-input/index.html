@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NIPOST Address Input Web Component — Modern Nigerian Address Collection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --brand: #15803d;
+      --brand-hover: #166534;
+      --brand-light: #f0fdf4;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-page: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f293d;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --brand: #22c55e;
+      --brand-hover: #4ade80;
+      --brand-light: #064e3b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      padding-bottom: 5rem;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-title h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-tag {
+      font-size: 0.75rem;
+      background: var(--brand-light);
+      color: var(--brand);
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-toggle-theme {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 0.5rem 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .hero-subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 720px;
+      margin-bottom: 2rem;
+    }
+
+    /* Grid Layout */
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 1.75rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Quick Samples */
+    .samples-wrap {
+      margin-top: 1.25rem;
+    }
+
+    .samples-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+
+    .chips-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .chip-btn {
+      background: var(--bg-page);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+      color: var(--text-main);
+      transition: all 0.15s ease;
+    }
+
+    .chip-btn:hover {
+      border-color: var(--brand);
+      color: var(--brand);
+    }
+
+    .chip-btn.alert-chip {
+      color: #b45309;
+      background: #fffbeb;
+      border-color: #fde68a;
+    }
+
+    /* Live Inspector Card */
+    .inspector-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .badge-valid { background: #dcfce7; color: #15803d; }
+    .badge-partial { background: #fef3c7; color: #92400e; }
+    .badge-empty { background: var(--bg-page); color: var(--text-muted); border: 1px solid var(--card-border); }
+
+    .inspector-json {
+      background: #0f172a;
+      color: #38bdf8;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 1rem;
+      border-radius: 10px;
+      overflow-x: auto;
+      max-height: 380px;
+      margin-top: 1rem;
+    }
+
+    /* Customization Studio */
+    .studio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .studio-control {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .studio-control label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .studio-control select, .studio-control input {
+      font-family: inherit;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      background: var(--bg-page);
+      color: var(--text-main);
+    }
+
+    /* Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 1rem;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .tab-btn.active {
+      color: var(--brand);
+      border-color: var(--brand);
+      font-weight: 600;
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    .code-block {
+      position: relative;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      padding: 1.25rem;
+      border-radius: 10px;
+      overflow-x: auto;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 0.3rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .copy-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+
+    /* Form demo */
+    .form-submit-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+
+    .btn-submit {
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.65rem 1.25rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .btn-submit:hover {
+      opacity: 0.9;
+    }
+
+    #formPayloadOutput {
+      margin-top: 1rem;
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .grid-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand-title">
+        <h1>🇳🇬 &lt;nipost-address-input&gt;</h1>
+        <span class="brand-tag">v1.0.0</span>
+      </div>
+      <div class="header-actions">
+        <button class="btn-toggle-theme" id="themeToggleBtn">🌓 Toggle Dark Mode</button>
+      </div>
+    </header>
+
+    <p class="hero-subtitle">
+      Open-source lightweight address Web Component for Nigerian web applications. Combines freeform smart search, 
+      instant landmark detection, 774 LGA centroids, and 11-character NIPOST digital postcodes powered by WebAssembly.
+    </p>
+
+    <!-- Main Live Interactive Playground -->
+    <div class="grid-layout">
+      <!-- Left: Interactive Web Component -->
+      <div class="card">
+        <div class="card-title">
+          <span>Live Interactive Snippet</span>
+          <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">Editable</span>
+        </div>
+
+        <!-- The Custom Element -->
+        <form id="checkoutForm">
+          <nipost-address-input
+            id="addressWidget"
+            name="delivery_address"
+            wasm-url="/postcode.wasm"
+            wasm-exec-url="/wasm_exec.js"
+            required
+          ></nipost-address-input>
+
+          <div class="form-submit-row">
+            <button type="submit" class="btn-submit">Submit Form (Test FormData)</button>
+          </div>
+        </form>
+
+        <div id="formPayloadOutput" class="code-block" style="margin-top: 1rem;">
+          <button class="copy-btn" onclick="copySnippet('formPayloadCode')">Copy</button>
+          <pre id="formPayloadCode">// Click "Submit Form" to see multi-part FormData received by the server</pre>
+        </div>
+
+        <!-- Quick Sample Addresses -->
+        <div class="samples-wrap">
+          <div class="samples-label">Click a sample to test Nigerian address disambiguation:</div>
+          <div class="chips-group">
+            <button class="chip-btn" onclick="applySample('Plot 14 Admiralty Way, Lekki Phase 1, Opposite Domino\'s Pizza, Lagos')">
+              Lekki, Lagos (Landmark)
+            </button>
+            <button class="chip-btn" onclick="applySample('12 Aminu Kano Crescent, Wuse II, Near Banex Plaza, Abuja')">
+              Wuse II, Abuja (FCT)
+            </button>
+            <button class="chip-btn" onclick="applySample('No 4 Awolowo Way, Old Bodija, Beside UI Gate, Ibadan, Oyo')">
+              Bodija, Ibadan
+            </button>
+            <button class="chip-btn" onclick="applySample('Plot 22 Trans-Amadi Industrial Layout, Port Harcourt, Rivers')">
+              Port Harcourt, Rivers
+            </button>
+            <button class="chip-btn alert-chip" onclick="applySample('Plot 5, Victoria Island, 101241, Lagos')">
+              Legacy 6-digit (101241)
+            </button>
+            <button class="chip-btn alert-chip" onclick="applySample('LA 11 W06 TC 00')">
+              Illegal Unit 00 (Self-Healing)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Real-Time Event Inspector -->
+      <div class="card">
+        <div class="card-title">
+          <span>Real-time Disambiguation Inspector</span>
+          <span id="inspectBadge" class="inspector-badge badge-empty">Waiting for input</span>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted);">
+          Dispatched via <code style="font-family: var(--font-mono); font-size: 0.8rem;">nipost-change</code> and <code style="font-family: var(--font-mono); font-size: 0.8rem;">nipost-resolve</code> events:
+        </p>
+
+        <pre class="inspector-json" id="inspectorJson">{
+  "raw": "",
+  "postcodeValid": false,
+  "confidence": "low"
+}</pre>
+      </div>
+    </div>
+
+    <!-- Customization Studio -->
+    <div class="card" style="margin-bottom: 2.5rem;">
+      <div class="card-title">
+        <span>Three-Tier Styling & Design System Studio</span>
+      </div>
+      <p style="font-size: 0.88rem; color: var(--text-muted);">
+        Easily integrate with Tailwind CSS, Shadcn, Bootstrap, or custom CSS via theme presets, CSS variables, or shadow parts.
+      </p>
+
+      <div class="studio-grid">
+        <div class="studio-control">
+          <label>Theme Preset</label>
+          <select id="themeSelect" onchange="updateTheme(this.value)">
+            <option value="light">Light (Default)</option>
+            <option value="dark">Dark</option>
+            <option value="minimal">Minimal</option>
+            <option value="unstyled">Unstyled (Tailwind Mode)</option>
+          </select>
+        </div>
+
+        <div class="studio-control">
+          <label>Primary Accent Color</label>
+          <input type="color" id="primaryColorInput" value="#15803d" onchange="updateCssVar('--nipost-primary', this.value)" />
+        </div>
+
+        <div class="studio-control">
+          <label>Border Radius</label>
+          <input type="range" min="0" max="24" value="8" oninput="updateCssVar('--nipost-radius', this.value + 'px')" />
+        </div>
+
+        <div class="studio-control">
+          <label>Allow GPS Geolocation</label>
+          <select onchange="document.getElementById('addressWidget').setAttribute('allow-gps', this.value)">
+            <option value="true">Enabled</option>
+            <option value="false">Disabled</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-Framework Integration Cheat Sheet -->
+    <div class="card">
+      <div class="card-title">
+        <span>Framework Integration Recipes</span>
+      </div>
+
+      <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchTab('htmlTab', this)">HTML / CDN</button>
+        <button class="tab-btn" onclick="switchTab('reactTab', this)">React / Next.js</button>
+        <button class="tab-btn" onclick="switchTab('vueTab', this)">Vue 3</button>
+        <button class="tab-btn" onclick="switchTab('angularTab', this)">Angular</button>
+      </div>
+
+      <!-- HTML / CDN -->
+      <div id="htmlTab" class="tab-pane active">
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet('htmlCode')">Copy</button>
+          <pre id="htmlCode">&lt;!-- 1. Include script (CDN or local bundle) --&gt;
+&lt;script type="module" src="https://unpkg.com/@abcubed3/nipost-address-input"&gt;&lt;/script&gt;
+
+&lt;!-- 2. Drop into any standard HTML form --&gt;
+&lt;form action="/checkout" method="POST"&gt;
+  &lt;nipost-address-input
+    name="shipping_address"
+    placeholder="Enter your street, landmark, estate or city..."
+    required
+  &gt;&lt;/nipost-address-input&gt;
+  
+  &lt;button type="submit"&gt;Pay Now&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;script&gt;
+  const input = document.querySelector('nipost-address-input');
+  input.addEventListener('nipost-resolve', (e) =&gt; {
+    console.log('Verified NIPOST Postcode:', e.detail.postcode);
+    console.log('Address Breakdown:', e.detail.address);
+  });
+&lt;/script&gt;</pre>
+        </div>
+      </div>
+
+      <!-- React / Next.js -->
+      <div id="reactTab" class="tab-pane">
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet('reactCode')">Copy</button>
+          <pre id="reactCode">import React, { useEffect, useRef } from 'react';
+import '@abcubed3/nipost-address-input';
+
+export function CheckoutAddressForm() {
+  const addressRef = useRef(null);
+
+  useEffect(() =&gt; {
+    const el = addressRef.current;
+    if (!el) return;
+
+    const handleResolve = (e) =&gt; {
+      const { postcode, address } = e.detail;
+      console.log('Resolved Postcode:', postcode, address);
+    };
+
+    el.addEventListener('nipost-resolve', handleResolve);
+    return () =&gt; el.removeEventListener('nipost-resolve', handleResolve);
+  }, []);
+
+  return (
+    &lt;div className="max-w-lg mx-auto"&gt;
+      &lt;nipost-address-input
+        ref={addressRef}
+        name="shipping_address"
+        theme="light"
+        required
+      /&gt;
+    &lt;/div&gt;
+  );
+}</pre>
+        </div>
+      </div>
+
+      <!-- Vue 3 -->
+      <div id="vueTab" class="tab-pane">
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet('vueCode')">Copy</button>
+          <pre id="vueCode">&lt;template&gt;
+  &lt;nipost-address-input
+    name="shipping_address"
+    @nipost-resolve="onAddressResolved"
+    @nipost-change="onAddressChanged"
+  /&gt;
+&lt;/template&gt;
+
+&lt;script setup&gt;
+import '@abcubed3/nipost-address-input';
+
+function onAddressResolved(event) {
+  console.log('Postcode:', event.detail.postcode);
+  console.log('Full extraction:', event.detail.address);
+}
+
+function onAddressChanged(event) {
+  console.log('Draft address:', event.detail.address);
+}
+&lt;/script&gt;</pre>
+        </div>
+      </div>
+
+      <!-- Angular -->
+      <div id="angularTab" class="tab-pane">
+        <div class="code-block">
+          <button class="copy-btn" onclick="copySnippet('angularCode')">Copy</button>
+          <pre id="angularCode">// app.module.ts (or standalone component schemas: [CUSTOM_ELEMENTS_SCHEMA])
+import { CUSTOM_ELEMENTS_SCHEMA, NgModule } from '@angular/core';
+import '@abcubed3/nipost-address-input';
+
+@Component({
+  selector: 'app-checkout',
+  template: `
+    &lt;nipost-address-input
+      name="delivery_address"
+      (nipost-resolve)="handleAddressResolve($event)"
+    &gt;&lt;/nipost-address-input&gt;
+  `,
+  schemas: [CUSTOM_ELEMENTS_SCHEMA]
+})
+export class CheckoutComponent {
+  handleAddressResolve(event: any) {
+    console.log('NIPOST Code:', event.detail.postcode);
+  }
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load component module -->
+  <script type="module" src="/src/index.ts"></script>
+
+  <script>
+    const widget = document.getElementById('addressWidget');
+    const inspectBadge = document.getElementById('inspectBadge');
+    const inspectorJson = document.getElementById('inspectorJson');
+    const checkoutForm = document.getElementById('checkoutForm');
+    const formPayloadOutput = document.getElementById('formPayloadOutput');
+    const formPayloadCode = document.getElementById('formPayloadCode');
+
+    // Listen to component custom events
+    widget.addEventListener('nipost-change', (e) => {
+      const { address, isValid } = e.detail;
+      inspectorJson.textContent = JSON.stringify(address, null, 2);
+
+      if (isValid) {
+        inspectBadge.className = 'inspector-badge badge-valid';
+        inspectBadge.textContent = '✓ Verified Postcode';
+      } else if (address.stateCode || address.lgaCode) {
+        inspectBadge.className = 'inspector-badge badge-partial';
+        inspectBadge.textContent = '⚠ Partial Address';
+      } else {
+        inspectBadge.className = 'inspector-badge badge-empty';
+        inspectBadge.textContent = 'Waiting for input';
+      }
+    });
+
+    widget.addEventListener('nipost-resolve', (e) => {
+      inspectBadge.className = 'inspector-badge badge-valid';
+      inspectBadge.textContent = '✓ Resolved (' + e.detail.postcode + ')';
+    });
+
+    // Form submission listener
+    checkoutForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const formData = new FormData(checkoutForm);
+      const output = {};
+      for (const [key, value] of formData.entries()) {
+        output[key] = value;
+      }
+      formPayloadCode.textContent = JSON.stringify(output, null, 2);
+      formPayloadOutput.style.display = 'block';
+    });
+
+    function applySample(text) {
+      widget.setAddress(text);
+    }
+
+    function updateTheme(theme) {
+      widget.setAttribute('theme', theme);
+    }
+
+    function updateCssVar(name, value) {
+      widget.style.setProperty(name, value);
+    }
+
+    // Tab switcher
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    function copySnippet(id) {
+      const code = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        alert('Code copied to clipboard!');
+      });
+    }
+
+    // Dark mode toggle
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+    themeToggleBtn.addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      widget.setAttribute('theme', isDark ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

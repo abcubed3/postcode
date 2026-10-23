@@ -1,11 +1,28 @@
 package postcode
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 )
+
+// RateLimitInfo contains the rate-limiting quotas returned by the NIPOST API gateway
+// as documented in https://docs.postcode.gov.ng/authentication.
+type RateLimitInfo struct {
+	Limit         int           // Maximum requests allowed in current window (from X-RateLimit-Limit)
+	Remaining     int           // Remaining requests in current window (from X-RateLimit-Remaining)
+	CreditBalance int           // Remaining commercial credit balance, or -1 if header not present (from X-Credit-Balance)
+	ResetAt       time.Time     // Timestamp when quota resets (from X-RateLimit-Reset or Retry-After)
+	RetryAfter    time.Duration // Cooldown duration requested by server (from Retry-After or X-RateLimit-Reset)
+}
+
+// RetryConfig configures backoff, jitter, and rate-limit handling for HTTP requests.
+type RetryConfig struct {
+	MaxRetries        int           // Maximum retry attempts for transient errors (default: 3)
+	BaseDelay         time.Duration // Initial exponential backoff delay (default: 100ms)
+	MaxDelay          time.Duration // Maximum exponential backoff delay (default: 2s)
+	DisableRateLimit  bool          // If true, 429 Too Many Requests will not be retried automatically
+	MaxRateLimitDelay time.Duration // Maximum sleep duration client will wait for a 429 cooldown (default: 10s)
+}
 
 // APIError represents an error returned by the NIPOST Postcode API gateway.
 type APIError struct {
@@ -26,44 +43,18 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("postcode: http %d: %s", e.StatusCode, e.Message)
 }
 
-// UnmarshalJSON handles both the official nested envelope {"error": {"code": ..., "message": ...}}
-// and flat payloads {"code": ..., "message": ...}.
-func (e *APIError) UnmarshalJSON(data []byte) error {
-	var nested struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(data, &nested); err == nil && (nested.Error.Code != "" || nested.Error.Message != "") {
-		e.Code = nested.Error.Code
-		e.Message = nested.Error.Message
-		return nil
-	}
-
-	var flat struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(data, &flat); err == nil {
-		e.Code = flat.Code
-		e.Message = flat.Message
-	}
-	return nil
-}
-
 func (e *APIError) IsRateLimit() bool {
-	return e.StatusCode == http.StatusTooManyRequests || e.Code == "rate_limit_exceeded"
+	return e.StatusCode == 429 || e.Code == "rate_limit_exceeded"
 }
 
 func (e *APIError) IsInsufficientCredits() bool {
-	return e.StatusCode == http.StatusPaymentRequired || e.Code == "insufficient_credits"
+	return e.StatusCode == 402 || e.Code == "insufficient_credits"
 }
 
 func (e *APIError) IsUnauthorized() bool {
-	return e.StatusCode == http.StatusUnauthorized
+	return e.StatusCode == 401
 }
 
 func (e *APIError) IsNotFound() bool {
-	return e.StatusCode == http.StatusNotFound
+	return e.StatusCode == 404
 }

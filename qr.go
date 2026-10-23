@@ -4,18 +4,37 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"html"
-	"image"
-	"image/color"
-	"image/png"
 	"io"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 )
+
+func htmlEscapeString(s string) string {
+	if !strings.ContainsAny(s, `&'<>"`) {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s) + 8)
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '&':
+			sb.WriteString("&amp;")
+		case '\'':
+			sb.WriteString("&#39;")
+		case '<':
+			sb.WriteString("&lt;")
+		case '>':
+			sb.WriteString("&gt;")
+		case '"':
+			sb.WriteString("&#34;")
+		default:
+			sb.WriteByte(s[i])
+		}
+	}
+	return sb.String()
+}
 
 // QRErrorCorrectionLevel defines the Reed-Solomon error correction capacity of a QR code.
 type QRErrorCorrectionLevel string
@@ -386,7 +405,7 @@ func normalizeHexColor(c, fallback string) string {
 	return strings.ToUpper(c)
 }
 
-func parseHexRGBA(hexStr string, fallback color.RGBA) color.RGBA {
+func parseHexRGB(hexStr string, fallback [3]uint8) [3]uint8 {
 	if len(hexStr) != 7 || hexStr[0] != '#' {
 		return fallback
 	}
@@ -396,7 +415,7 @@ func parseHexRGBA(hexStr string, fallback color.RGBA) color.RGBA {
 	if err1 != nil || err2 != nil || err3 != nil {
 		return fallback
 	}
-	return color.RGBA{R: uint8(rv), G: uint8(gv), B: uint8(bv), A: 255}
+	return [3]uint8{uint8(rv), uint8(gv), uint8(bv)}
 }
 
 func buildQRPayload(p Postcode, loc Location, pt QRPayloadType) string {
@@ -416,22 +435,34 @@ func buildQRPayload(p Postcode, loc Location, pt QRPayloadType) string {
 	case QRPayloadGeoURI:
 		return loc.GeoURI()
 	case QRPayloadJSON:
-		payload := map[string]any{
-			"postcode":        p.Formatted(),
-			"compact":         p.Compact(),
-			"state_code":      p.State(),
-			"state_name":      loc.StateName,
-			"lga_code":        p.LGA(),
-			"lga_name":        loc.LGAName,
-			"latitude":        loc.Latitude,
-			"longitude":       loc.Longitude,
-			"google_maps_url": loc.GoogleMapsURL(),
-		}
+		var sb strings.Builder
+		sb.Grow(220)
+		sb.WriteByte('{')
 		if loc.Address != "" {
-			payload["address"] = loc.Address
+			sb.WriteString(`"address":`)
+			sb.WriteString(strconv.Quote(loc.Address))
+			sb.WriteByte(',')
 		}
-		b, _ := json.Marshal(payload)
-		return string(b)
+		sb.WriteString(`"compact":`)
+		sb.WriteString(strconv.Quote(p.Compact()))
+		sb.WriteString(`,"google_maps_url":`)
+		sb.WriteString(strconv.Quote(loc.GoogleMapsURL()))
+		sb.WriteString(`,"latitude":`)
+		sb.WriteString(strconv.FormatFloat(loc.Latitude, 'f', -1, 64))
+		sb.WriteString(`,"lga_code":`)
+		sb.WriteString(strconv.Quote(p.LGA()))
+		sb.WriteString(`,"lga_name":`)
+		sb.WriteString(strconv.Quote(loc.LGAName))
+		sb.WriteString(`,"longitude":`)
+		sb.WriteString(strconv.FormatFloat(loc.Longitude, 'f', -1, 64))
+		sb.WriteString(`,"postcode":`)
+		sb.WriteString(strconv.Quote(p.Formatted()))
+		sb.WriteString(`,"state_code":`)
+		sb.WriteString(strconv.Quote(p.State()))
+		sb.WriteString(`,"state_name":`)
+		sb.WriteString(strconv.Quote(loc.StateName))
+		sb.WriteByte('}')
+		return sb.String()
 	case QRPayloadText:
 		var lines []string
 		lines = append(lines, fmt.Sprintf("NIPOST Postcode: %s", p.Formatted()))
@@ -479,8 +510,8 @@ func (q *QRCode) MatrixSVG() string {
 	var sb strings.Builder
 	sb.Grow(4096)
 	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" shape-rendering="crispEdges" role="img" aria-label="Nigerian Postcode %s QR Code">`,
-		total, total, size, size, html.EscapeString(q.Postcode))
-	fmt.Fprintf(&sb, `<title>Nigerian Postcode %s</title>`, html.EscapeString(q.Postcode))
+		total, total, size, size, htmlEscapeString(q.Postcode))
+	fmt.Fprintf(&sb, `<title>Nigerian Postcode %s</title>`, htmlEscapeString(q.Postcode))
 	fmt.Fprintf(&sb, `<rect width="%d" height="%d" fill="%s"/>`, total, total, q.BackgroundColor)
 	fmt.Fprintf(&sb, `<path fill="%s" d="`, q.ForegroundColor)
 	writeSVGModulesPath(&sb, q.Modules, qz, qz)
@@ -557,8 +588,8 @@ func (q *QRCode) LabelSVG() string {
 	var sb strings.Builder
 	sb.Grow(8192)
 	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" role="img" aria-label="Printable Nigerian Postcode Label %s">`,
-		cardW, cardH, cardW, cardH, html.EscapeString(q.Postcode))
-	fmt.Fprintf(&sb, `<title>%s - %s</title>`, html.EscapeString(title), html.EscapeString(q.Postcode))
+		cardW, cardH, cardW, cardH, htmlEscapeString(q.Postcode))
+	fmt.Fprintf(&sb, `<title>%s - %s</title>`, htmlEscapeString(title), htmlEscapeString(q.Postcode))
 
 	// Card background & outer border
 	fmt.Fprintf(&sb, `<rect x="2" y="2" width="%d" height="%d" rx="16" ry="16" fill="%s" stroke="%s" stroke-width="3"/>`,
@@ -568,7 +599,7 @@ func (q *QRCode) LabelSVG() string {
 	fmt.Fprintf(&sb, `<path d="M 2 18 Q 2 2 18 2 L %d 2 Q %d 2 %d 18 L %d 50 L 2 50 Z" fill="%s"/>`,
 		cardW-18, cardW-2, cardW-2, cardW-2, headerColor)
 	fmt.Fprintf(&sb, `<text x="%d" y="32" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="1.8">%s</text>`,
-		cardW/2, html.EscapeString(strings.ToUpper(title)))
+		cardW/2, htmlEscapeString(strings.ToUpper(title)))
 
 	// QR code nested viewport
 	fmt.Fprintf(&sb, `<rect x="%d" y="%d" width="%d" height="%d" rx="8" ry="8" fill="%s" stroke="#E2E8F0" stroke-width="1.5"/>`,
@@ -585,24 +616,24 @@ func (q *QRCode) LabelSVG() string {
 	fmt.Fprintf(&sb, `<rect x="32" y="%d" width="%d" height="54" rx="10" ry="10" fill="#F0FDF4" stroke="%s" stroke-width="2"/>`,
 		pillY, cardW-64, headerColor)
 	fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="28" font-weight="900" letter-spacing="2">%s</text>`,
-		cardW/2, pillY+36, html.EscapeString(q.Postcode))
+		cardW/2, pillY+36, htmlEscapeString(q.Postcode))
 
 	// Segment Legend
 	legendY := pillY + 72
 	fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700" letter-spacing="1.5">STATE (%s) • LGA (%s) • DIST (%s) • AREA (%s) • UNIT (%s)</text>`,
 		cardW/2, legendY,
-		html.EscapeString(q.StateCode),
-		html.EscapeString(q.LGACode),
-		html.EscapeString(q.Postcode[6:9]),
-		html.EscapeString(q.Postcode[10:12]),
-		html.EscapeString(q.Postcode[13:15]),
+		htmlEscapeString(q.StateCode),
+		htmlEscapeString(q.LGACode),
+		htmlEscapeString(q.Postcode[6:9]),
+		htmlEscapeString(q.Postcode[10:12]),
+		htmlEscapeString(q.Postcode[13:15]),
 	)
 
 	// Administrative Location Line
 	locY := legendY + 26
 	if adminLine != "" {
 		fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" fill="#1E293B" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700">%s</text>`,
-			cardW/2, locY, html.EscapeString(adminLine))
+			cardW/2, locY, htmlEscapeString(adminLine))
 	}
 
 	nextY := locY
@@ -613,7 +644,7 @@ func (q *QRCode) LabelSVG() string {
 			sub = sub[:45] + "..."
 		}
 		fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="500">%s</text>`,
-			cardW/2, nextY, html.EscapeString(sub))
+			cardW/2, nextY, htmlEscapeString(sub))
 	}
 
 	// Coordinates & Scan Hint Footer
@@ -624,7 +655,7 @@ func (q *QRCode) LabelSVG() string {
 	}
 
 	fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" fill="%s" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="800" letter-spacing="1.4">%s</text>`,
-		cardW/2, cardH-16, headerColor, html.EscapeString(scanHint))
+		cardW/2, cardH-16, headerColor, htmlEscapeString(scanHint))
 
 	sb.WriteString(`</svg>`)
 	return sb.String()
@@ -707,18 +738,16 @@ func (q *QRCode) PrintableHTML() string {
   </div>
 </body>
 </html>`,
-		html.EscapeString(q.Postcode),
+		htmlEscapeString(q.Postcode),
 		svgCard,
-		html.EscapeString(q.Postcode),
-		html.EscapeString(admin),
-		html.EscapeString(string(q.PayloadType)),
-		html.EscapeString(q.Payload),
+		htmlEscapeString(q.Postcode),
+		htmlEscapeString(admin),
+		htmlEscapeString(string(q.PayloadType)),
+		htmlEscapeString(q.Payload),
 	)
 }
 
-// Image renders the QRCode as a standard Go image.Image.
-// When IncludeLabel is true, a footer banner with the formatted postcode and State/LGA is drawn below the QR matrix.
-func (q *QRCode) Image() image.Image {
+func (q *QRCode) renderPalettedBuffer() (pix []uint8, width, height int, palette [3][3]uint8) {
 	n := len(q.Modules)
 	qz := q.QuietZone
 	totalModules := n + 2*qz
@@ -742,22 +771,19 @@ func (q *QRCode) Image() image.Image {
 		labelHeight = max(56, qrPixSize/5)
 	}
 
-	fgColor := parseHexRGBA(q.ForegroundColor, color.RGBA{0, 0, 0, 255})
-	bgColor := parseHexRGBA(q.BackgroundColor, color.RGBA{255, 255, 255, 255})
-	accentColor := color.RGBA{0, 135, 81, 255} // NIPOST Green
+	fgColor := parseHexRGB(q.ForegroundColor, [3]uint8{0, 0, 0})
+	bgColor := parseHexRGB(q.BackgroundColor, [3]uint8{255, 255, 255})
+	accentColor := [3]uint8{0, 135, 81} // NIPOST Green
 	if q.ForegroundColor != "#000000" {
 		accentColor = fgColor
 	}
 
-	palette := color.Palette{bgColor, fgColor, accentColor}
-	img := image.NewPaletted(image.Rect(0, 0, qrPixSize, qrPixSize+labelHeight), palette)
+	palette = [3][3]uint8{bgColor, fgColor, accentColor}
+	width = qrPixSize
+	height = qrPixSize + labelHeight
+	pix = make([]uint8, width*height)
 
-	// Fill background (palette index 0)
-	for i := range img.Pix {
-		img.Pix[i] = 0
-	}
-
-	// Draw QR modules (palette index 1)
+	// Draw QR modules (palette index 1; background is already 0)
 	for r := 0; r < n; r++ {
 		for c := 0; c < n; c++ {
 			if !q.Modules[r][c] {
@@ -766,9 +792,9 @@ func (q *QRCode) Image() image.Image {
 			startX := (c + qz) * scale
 			startY := (r + qz) * scale
 			for dy := 0; dy < scale; dy++ {
-				rowOff := (startY+dy)*img.Stride + startX
+				rowOff := (startY+dy)*width + startX
 				for dx := 0; dx < scale; dx++ {
-					img.Pix[rowOff+dx] = 1
+					pix[rowOff+dx] = 1
 				}
 			}
 		}
@@ -778,10 +804,10 @@ func (q *QRCode) Image() image.Image {
 		// Draw divider bar in accent color (palette index 2)
 		barY := qrPixSize
 		for dy := 0; dy < max(2, scale/2); dy++ {
-			if barY+dy < qrPixSize+labelHeight {
-				rowOff := (barY + dy) * img.Stride
+			if barY+dy < height {
+				rowOff := (barY + dy) * width
 				for x := scale; x < qrPixSize-scale; x++ {
-					img.Pix[rowOff+x] = 2
+					pix[rowOff+x] = 2
 				}
 			}
 		}
@@ -789,7 +815,7 @@ func (q *QRCode) Image() image.Image {
 		// Draw canonical postcode centered using built-in 5x7 bitmap font
 		fontScale := max(2, qrPixSize/110)
 		textY := qrPixSize + max(8, labelHeight/6)
-		drawBitmapTextCentered(img, q.Postcode, qrPixSize/2, textY, fontScale, 1)
+		drawBitmapBufferTextCentered(pix, width, height, q.Postcode, qrPixSize/2, textY, fontScale, 1)
 
 		// Draw State / LGA line below postcode
 		subText := strings.ToUpper(q.StateName)
@@ -801,12 +827,12 @@ func (q *QRCode) Image() image.Image {
 		}
 		subScale := max(1, fontScale-1)
 		subY := textY + 7*fontScale + max(6, fontScale*2)
-		if subY+7*subScale < qrPixSize+labelHeight-2 {
-			drawBitmapTextCentered(img, subText, qrPixSize/2, subY, subScale, 2)
+		if subY+7*subScale < height-2 {
+			drawBitmapBufferTextCentered(pix, width, height, subText, qrPixSize/2, subY, subScale, 2)
 		}
 	}
 
-	return img
+	return pix, width, height, palette
 }
 
 // PNG encodes the QR code as a PNG image.
@@ -818,35 +844,10 @@ func (q *QRCode) PNG() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// WritePNG writes the PNG-encoded QR code to w.
-func (q *QRCode) WritePNG(w io.Writer) error {
-	enc := png.Encoder{CompressionLevel: png.BestCompression}
-	return enc.Encode(w, q.Image())
-}
-
 // WriteSVG writes the SVG-encoded QR code to w.
 func (q *QRCode) WriteSVG(w io.Writer) error {
 	_, err := io.WriteString(w, q.SVG())
 	return err
-}
-
-// SaveSVG writes the SVG-encoded QR code to a file at filename.
-func (q *QRCode) SaveSVG(filename string) error {
-	return os.WriteFile(filename, []byte(q.SVG()), 0644)
-}
-
-// SavePNG writes the PNG-encoded QR code image to a file at filename.
-func (q *QRCode) SavePNG(filename string) error {
-	b, err := q.PNG()
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filename, b, 0644)
-}
-
-// SaveHTML writes the printable HTML label page to a file at filename.
-func (q *QRCode) SaveHTML(filename string) error {
-	return os.WriteFile(filename, []byte(q.PrintableHTML()), 0644)
 }
 
 // DataURI returns a base64-encoded PNG data URI ("data:image/png;base64,...") suitable for HTML <img> src attributes.
@@ -1003,7 +1004,7 @@ var bitmapFont5x7 = map[byte][7]uint8{
 	'Z': {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F},
 }
 
-func drawBitmapTextCentered(img *image.Paletted, text string, centerX, startY, scale int, colorIdx uint8) {
+func drawBitmapBufferTextCentered(pix []uint8, width, height int, text string, centerX, startY, scale int, colorIdx uint8) {
 	text = strings.ToUpper(text)
 	if len(text) == 0 || scale <= 0 {
 		return
@@ -1013,7 +1014,6 @@ func drawBitmapTextCentered(img *image.Paletted, text string, centerX, startY, s
 	totalW := len(text)*charWidth + (len(text)-1)*spacing
 	startX := centerX - totalW/2
 
-	bounds := img.Bounds()
 	for idx := 0; idx < len(text); idx++ {
 		glyph, ok := bitmapFont5x7[text[idx]]
 		if !ok {
@@ -1031,8 +1031,8 @@ func drawBitmapTextCentered(img *image.Paletted, text string, centerX, startY, s
 				for dy := 0; dy < scale; dy++ {
 					for dx := 0; dx < scale; dx++ {
 						x, y := px+dx, py+dy
-						if x >= bounds.Min.X && x < bounds.Max.X && y >= bounds.Min.Y && y < bounds.Max.Y {
-							img.Pix[y*img.Stride+x] = colorIdx
+						if x >= 0 && x < width && y >= 0 && y < height {
+							pix[y*width+x] = colorIdx
 						}
 					}
 				}

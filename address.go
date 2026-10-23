@@ -1,9 +1,6 @@
 package postcode
 
-import (
-	"regexp"
-	"strings"
-)
+import "strings"
 
 // AddressExtraction holds the structured entities extracted from an unstructured Nigerian address
 // using the 5-stage NIPOST address disambiguation pipeline.
@@ -94,11 +91,37 @@ var (
 		{phrase: "Dala", stateCode: "KN", lgaCode: "31"},
 	}
 
-	// landmarkKeywords identifies Nigerian landmark anchor phrases.
-	landmarkRegex = regexp.MustCompile(`(?i)\b((?:opposite|beside|near|behind|close to|after|adjacent|under|back of|in front of)\s+[^,;]+)`)
+	// landmarkPrefixes identifies Nigerian landmark anchor phrases (checked longest-first).
+	landmarkPrefixes = []string{
+		"IN FRONT OF",
+		"OPPOSITE",
+		"ADJACENT",
+		"CLOSE TO",
+		"BACK OF",
+		"BESIDE",
+		"BEHIND",
+		"AFTER",
+		"UNDER",
+		"NEAR",
+	}
 
-	// streetRegex identifies street names and house numbers.
-	streetRegex = regexp.MustCompile(`(?i)((?:(?:no\.?|plot|flat|house|blk|block)\s*\d+[a-z]?[\s,]+)?[a-z0-9\.\-\s]{2,40}?\b(?:street|st|road|rd|way|avenue|ave|crescent|close|drive|boulevard|expressway|lane)\b)`)
+	// streetSuffixes identifies street names and road types.
+	streetSuffixes = []string{
+		"EXPRESSWAY",
+		"BOULEVARD",
+		"CRESCENT",
+		"AVENUE",
+		"STREET",
+		"CLOSE",
+		"DRIVE",
+		"ROAD",
+		"LANE",
+		"WAY",
+		"AVE",
+		"STR",
+		"ST",
+		"RD",
+	}
 
 	// englishTwoLetterStopwords prevents 2-letter English prepositions/words in addresses
 	// (such as "BY", "ON", "AN", "SO", "GO") from being misclassified as Nigerian state codes.
@@ -132,8 +155,8 @@ func ExtractAddress(raw string) AddressExtraction {
 	upper := strings.ToUpper(res.Raw)
 
 	// Stage 0: Extract modern 11-character postcode (or auto-repairable candidate)
-	if match := postcodeRegex.FindStringSubmatch(res.Raw); len(match) == 6 {
-		candidate := strings.ToUpper(match[1]) + " " + match[2] + " " + strings.ToUpper(match[3]) + " " + strings.ToUpper(match[4]) + " " + match[5]
+	if match, ok := findPostcodeSubmatch(res.Raw); ok {
+		candidate := strings.ToUpper(match[0]) + " " + match[1] + " " + strings.ToUpper(match[2]) + " " + strings.ToUpper(match[3]) + " " + match[4]
 		if p, ok := TryRepair(candidate); ok {
 			res.Postcode = p.Formatted()
 			res.PostcodeValid = true
@@ -152,8 +175,8 @@ func ExtractAddress(raw string) AddressExtraction {
 	}
 
 	// Check for legacy 6-digit postal code
-	if match := legacyRegex.FindStringSubmatch(res.Raw); len(match) == 2 {
-		res.LegacyPostcode = match[1]
+	if legacy := findLegacyPostcode(res.Raw); legacy != "" {
+		res.LegacyPostcode = legacy
 		if prefix, _, ok := LookupLegacyPrefix(res.LegacyPostcode); ok {
 			if res.SuggestedPrefix == "" {
 				res.SuggestedPrefix = prefix
@@ -256,7 +279,6 @@ func ExtractAddress(raw string) AddressExtraction {
 	lgaFromText := false
 	for _, rule := range nigerianLocalityRules {
 		if strings.Contains(upper, rule.upper) {
-			// If we already know the state, prefer localities in that state
 			if textStateCode != "" && rule.stateCode != textStateCode {
 				continue
 			}
@@ -296,7 +318,7 @@ func ExtractAddress(raw string) AddressExtraction {
 
 	// Fallback to non-ambiguous 2-letter state code only if still unknown
 	if textStateCode == "" && res.StateCode == "" {
-		matches := stateCodeRegex.FindAllString(upper, -1)
+		matches := findStateCodeTokens(upper)
 		for _, m := range matches {
 			if englishTwoLetterStopwords[m] {
 				continue
@@ -330,11 +352,11 @@ func ExtractAddress(raw string) AddressExtraction {
 	}
 
 	// Stage 4: Street and Landmark Extraction
-	if lmMatch := landmarkRegex.FindStringSubmatch(res.Raw); len(lmMatch) >= 2 {
-		res.Landmark = strings.TrimSpace(lmMatch[1])
+	if lm := extractLandmarkPhrase(res.Raw, upper); lm != "" {
+		res.Landmark = lm
 	}
-	if stMatch := streetRegex.FindStringSubmatch(res.Raw); len(stMatch) >= 2 {
-		res.Street = strings.TrimSpace(stMatch[1])
+	if st := extractStreetPhrase(res.Raw, upper); st != "" {
+		res.Street = st
 	}
 
 	// Stage 5: Coordinate & Confidence Resolution
@@ -363,4 +385,188 @@ func ExtractAddress(raw string) AddressExtraction {
 	}
 
 	return res
+}
+
+func isASCIILetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
+}
+
+func isASCIIAlnum(b byte) bool {
+	return isASCIILetter(b) || isASCIIDigit(b)
+}
+
+func isWordChar(b byte) bool {
+	return isASCIIAlnum(b) || b == '_'
+}
+
+func isSepByte(b byte) bool {
+	return b == ' ' || b == '-' || b == '\t' || b == '\n' || b == '\r'
+}
+
+// findPostcodeSubmatch scans s for the first word-bounded 5-segment Nigerian postcode pattern:
+// ([A-Za-z]{2})[\s\-]?([0-9]{2})[\s\-]?([A-Za-z0-9]{3})[\s\-]?([A-Za-z]{2})[\s\-]?([0-9]{2})
+func findPostcodeSubmatch(s string) ([5]string, bool) {
+	n := len(s)
+	for i := 0; i <= n-11; i++ {
+		if i > 0 && isWordChar(s[i-1]) {
+			continue
+		}
+		if !isASCIILetter(s[i]) || !isASCIILetter(s[i+1]) {
+			continue
+		}
+		p := i + 2
+		if p < n && isSepByte(s[p]) {
+			p++
+		}
+		if p+2 > n || !isASCIIDigit(s[p]) || !isASCIIDigit(s[p+1]) {
+			continue
+		}
+		seg2 := s[p : p+2]
+		p += 2
+		if p < n && isSepByte(s[p]) {
+			p++
+		}
+		if p+3 > n || !isASCIIAlnum(s[p]) || !isASCIIAlnum(s[p+1]) || !isASCIIAlnum(s[p+2]) {
+			continue
+		}
+		seg3 := s[p : p+3]
+		p += 3
+		if p < n && isSepByte(s[p]) {
+			p++
+		}
+		if p+2 > n || !isASCIILetter(s[p]) || !isASCIILetter(s[p+1]) {
+			continue
+		}
+		seg4 := s[p : p+2]
+		p += 2
+		if p < n && isSepByte(s[p]) {
+			p++
+		}
+		if p+2 > n || !isASCIIDigit(s[p]) || !isASCIIDigit(s[p+1]) {
+			continue
+		}
+		seg5 := s[p : p+2]
+		p += 2
+		if p < n && isWordChar(s[p]) {
+			continue
+		}
+		return [5]string{s[i : i+2], seg2, seg3, seg4, seg5}, true
+	}
+	return [5]string{}, false
+}
+
+// findLegacyPostcode scans s for the first word-bounded 6-digit number (\b[0-9]{6}\b).
+func findLegacyPostcode(s string) string {
+	n := len(s)
+	for i := 0; i <= n-6; i++ {
+		if i > 0 && isWordChar(s[i-1]) {
+			continue
+		}
+		allDigits := true
+		for j := 0; j < 6; j++ {
+			if !isASCIIDigit(s[i+j]) {
+				allDigits = false
+				break
+			}
+		}
+		if !allDigits {
+			continue
+		}
+		if i+6 < n && isWordChar(s[i+6]) {
+			continue
+		}
+		return s[i : i+6]
+	}
+	return ""
+}
+
+// findStateCodeTokens returns all word-bounded 2-letter uppercase Nigerian state code tokens in upper.
+func findStateCodeTokens(upper string) []string {
+	var out []string
+	n := len(upper)
+	for i := 0; i <= n-2; i++ {
+		if i > 0 && isWordChar(upper[i-1]) {
+			continue
+		}
+		if upper[i] < 'A' || upper[i] > 'Z' || upper[i+1] < 'A' || upper[i+1] > 'Z' {
+			continue
+		}
+		if i+2 < n && isWordChar(upper[i+2]) {
+			continue
+		}
+		tok := upper[i : i+2]
+		if _, ok := NigerianStates[tok]; ok {
+			out = append(out, tok)
+		}
+	}
+	return out
+}
+
+func extractLandmarkPhrase(raw, upper string) string {
+	n := len(upper)
+	bestIdx := -1
+	for _, kw := range landmarkPrefixes {
+		searchFrom := 0
+		for searchFrom < n {
+			rel := strings.Index(upper[searchFrom:], kw)
+			if rel < 0 {
+				break
+			}
+			pos := searchFrom + rel
+			endKw := pos + len(kw)
+			if (pos == 0 || !isWordChar(upper[pos-1])) && endKw < n && (upper[endKw] == ' ' || upper[endKw] == '\t') {
+				if bestIdx == -1 || pos < bestIdx {
+					bestIdx = pos
+				}
+				break
+			}
+			searchFrom = pos + 1
+		}
+	}
+	if bestIdx < 0 {
+		return ""
+	}
+	end := bestIdx
+	for end < len(raw) && raw[end] != ',' && raw[end] != ';' {
+		end++
+	}
+	return strings.TrimSpace(raw[bestIdx:end])
+}
+
+func extractStreetPhrase(raw, upper string) string {
+	clauses := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';'
+	})
+	offset := 0
+	for _, clause := range clauses {
+		idx := strings.Index(raw[offset:], clause)
+		clauseStart := offset + max(0, idx)
+		offset = clauseStart + len(clause)
+
+		trimmed := strings.TrimSpace(clause)
+		if len(trimmed) < 4 {
+			continue
+		}
+		upClause := strings.ToUpper(trimmed)
+		for _, suf := range streetSuffixes {
+			searchFrom := 0
+			for searchFrom < len(upClause) {
+				rel := strings.Index(upClause[searchFrom:], suf)
+				if rel < 0 {
+					break
+				}
+				pos := searchFrom + rel
+				endPos := pos + len(suf)
+				if pos > 1 && !isWordChar(upClause[pos-1]) && (endPos == len(upClause) || !isWordChar(upClause[endPos])) {
+					return strings.TrimSpace(trimmed[:endPos])
+				}
+				searchFrom = pos + 1
+			}
+		}
+	}
+	return ""
 }

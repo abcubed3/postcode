@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NIPOST Address Input — Web Client Component Demo</title>
+  
+  <!-- Modern Clean Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- 
+    Load the Nipost Address Input Web Component:
+    1. Local monorepo bundle (works immediately offline):
+  -->
+  <script src="../../packages/address-input/dist/nipost-address-input.min.js"></script>
+
+  <!-- 
+    2. In production or standalone projects, import via CDN:
+    <script type="module" src="https://unpkg.com/@abcubed3/nipost-address-input"></script>
+    
+    Or install via npm:
+    npm install @abcubed3/nipost-address-input
+  -->
+
+  <style>
+    :root {
+      --nipost-green: #0b6623;
+      --nipost-green-dark: #074b19;
+      --nipost-green-light: #e8f5e9;
+      --nipost-green-border: #a5d6a7;
+      --slate-50: #f8fafc;
+      --slate-100: #f1f5f9;
+      --slate-200: #e2e8f0;
+      --slate-300: #cbd5e1;
+      --slate-500: #64748b;
+      --slate-700: #334155;
+      --slate-900: #0f172a;
+      --white: #ffffff;
+      --radius-lg: 14px;
+      --radius-md: 8px;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #f6f8fa;
+      color: var(--slate-900);
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: 32px 16px 64px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: var(--nipost-green-light);
+      color: var(--nipost-green);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      border: 1px solid var(--nipost-green-border);
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--slate-900);
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      font-size: 16px;
+      color: var(--slate-500);
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    /* Layout */
+    .grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    @media (max-width: 860px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Card */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--slate-200);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--slate-200);
+      background-color: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--slate-900);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-body {
+      padding: 24px;
+    }
+
+    /* Form Elements */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--slate-700);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="tel"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--slate-300);
+      background-color: var(--white);
+      color: var(--slate-900);
+      font-family: inherit;
+      font-size: 14px;
+      transition: all 0.15s ease-in-out;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--nipost-green);
+      box-shadow: 0 0 0 3px rgba(11, 102, 35, 0.12);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 540px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Quick Preset Chips */
+    .presets-box {
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      background-color: var(--slate-50);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--slate-200);
+    }
+
+    .presets-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--slate-500);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .preset-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .preset-btn {
+      font-size: 12px;
+      font-family: inherit;
+      background-color: var(--white);
+      border: 1px solid var(--slate-300);
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      color: var(--slate-700);
+      transition: all 0.15s ease;
+    }
+
+    .preset-btn:hover {
+      background-color: var(--nipost-green-light);
+      border-color: var(--nipost-green);
+      color: var(--nipost-green);
+    }
+
+    /* Action Button */
+    .submit-btn {
+      width: 100%;
+      background-color: var(--nipost-green);
+      color: var(--white);
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 13px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: var(--shadow-sm);
+      transition: background-color 0.15s ease, transform 0.05s ease;
+    }
+
+    .submit-btn:hover {
+      background-color: var(--nipost-green-dark);
+    }
+
+    .submit-btn:active {
+      transform: translateY(1px);
+    }
+
+    /* Telemetry & State Panel */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 9999px;
+    }
+
+    .status-valid {
+      background-color: #dcfce7;
+      color: #166534;
+    }
+
+    .status-pending {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    .meta-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .meta-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background-color: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: var(--radius-md);
+      font-size: 13px;
+    }
+
+    .meta-label {
+      color: var(--slate-500);
+      font-weight: 500;
+    }
+
+    .meta-value {
+      color: var(--slate-900);
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .code-box {
+      background-color: #0d1117;
+      color: #58a6ff;
+      border-radius: var(--radius-md);
+      padding: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      max-height: 260px;
+      border: 1px solid #30363d;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Modal / Result Toast */
+    #submissionOutput {
+      display: none;
+      margin-top: 16px;
+      padding: 14px;
+      background-color: var(--nipost-green-light);
+      border: 1px solid var(--nipost-green-border);
+      border-radius: var(--radius-md);
+    }
+
+    #submissionOutput h4 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--nipost-green);
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">
+        <span>🇳🇬</span> Official NIPOST Standard
+      </div>
+      <h1>Nigerian Address Web Client Demo</h1>
+      <p class="subtitle">
+        Embeddable <code>&lt;nipost-address-input&gt;</code> custom element featuring one-box smart extraction, 774 LGA centroids, and native <code>FormData</code> participation.
+      </p>
+    </header>
+
+    <div class="grid">
+      <!-- Checkout Form Column -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+            Delivery & Shipping Address
+          </div>
+          <span style="font-size: 12px; color: var(--slate-500);">Form-Associated Element</span>
+        </div>
+
+        <div class="card-body">
+          <!-- Preset buttons for rapid testing -->
+          <div class="presets-box">
+            <div class="presets-title">Try Instant Preset Addresses:</div>
+            <div class="preset-chips">
+              <button type="button" class="preset-btn" onclick="applyPreset('Plot 14 Admiralty Way, Lekki Phase 1, Opposite Domino\'s Pizza, Lagos')">
+                📍 Lekki, Lagos
+              </button>
+              <button type="button" class="preset-btn" onclick="applyPreset('12 Shehu Shagari Way, Garki, Abuja')">
+                🏛️ Garki, Abuja
+              </button>
+              <button type="button" class="preset-btn" onclick="applyPreset('NTA Road, Back of Fabian Hotel, Ado Ekiti')">
+                📦 Ado Ekiti
+              </button>
+              <button type="button" class="preset-btn" onclick="applyPreset('EK 01 A03 FK 01')">
+                🏷️ 11-Digit Code
+              </button>
+            </div>
+          </div>
+
+          <form id="checkoutForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="fullName">Recipient Full Name</label>
+                <input type="text" id="fullName" name="recipient_name" value="Amina Bello" required />
+              </div>
+              <div class="form-group">
+                <label for="phoneNumber">Phone Number</label>
+                <input type="tel" id="phoneNumber" name="phone" value="+234 802 345 6789" required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="addressInput">Delivery Address & NIPOST Postcode</label>
+              <!-- 
+                ============================================================
+                <nipost-address-input> Web Component
+                Attributes:
+                  - name: Form field name for FormData key nesting
+                  - theme: "light" (default), "dark", "minimal", or "unstyled"
+                  - placeholder: Custom search box placeholder
+                  - required: Native form validation requirement
+                ============================================================
+              -->
+              <nipost-address-input
+                id="addressInput"
+                name="delivery_address"
+                placeholder="Enter street, landmark, or 11-digit NIPOST code..."
+                theme="light"
+                required
+              ></nipost-address-input>
+            </div>
+
+            <div class="form-group">
+              <label for="orderNotes">Delivery Instructions (Optional)</label>
+              <input type="text" id="orderNotes" name="notes" placeholder="Call when arrived at the gate..." />
+            </div>
+
+            <button type="submit" class="submit-btn">
+              <span>Complete Delivery Order</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+              </svg>
+            </button>
+          </form>
+
+          <!-- Form submission confirmation toast -->
+          <div id="submissionOutput">
+            <h4>✓ Native Form Submission Captured!</h4>
+            <p style="font-size: 13px; color: var(--slate-700); margin-bottom: 8px;">
+              The form submitted structured NIPOST sub-keys without requiring custom serializer JavaScript:
+            </p>
+            <pre id="formDataJson" class="code-box" style="max-height: 180px;"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Inspection & Telemetry Column -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+            </svg>
+            Real-Time Telemetry
+          </div>
+          <span id="validityBadge" class="status-badge status-pending">Awaiting Input</span>
+        </div>
+
+        <div class="card-body">
+          <div class="meta-list">
+            <div class="meta-item">
+              <span class="meta-label">11-Char Postcode</span>
+              <span id="metaPostcode" class="meta-value">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">State / LGA</span>
+              <span id="metaStateLga" class="meta-value">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Extracted Landmark</span>
+              <span id="metaLandmark" class="meta-value" style="font-family: inherit;">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Coordinates (Centroid)</span>
+              <span id="metaCoords" class="meta-value">—</span>
+            </div>
+          </div>
+
+          <label>Event Stream (<code>nipost-change</code> & <code>nipost-resolve</code>)</label>
+          <pre id="eventJson" class="code-box">// Address events will appear here in real-time...</pre>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const widget = document.getElementById('addressInput');
+    const validityBadge = document.getElementById('validityBadge');
+    const metaPostcode = document.getElementById('metaPostcode');
+    const metaStateLga = document.getElementById('metaStateLga');
+    const metaLandmark = document.getElementById('metaLandmark');
+    const metaCoords = document.getElementById('metaCoords');
+    const eventJson = document.getElementById('eventJson');
+    const checkoutForm = document.getElementById('checkoutForm');
+    const submissionOutput = document.getElementById('submissionOutput');
+    const formDataJson = document.getElementById('formDataJson');
+
+    // 1. Listen for address updates (dispatched on every keystroke/selection)
+    widget.addEventListener('nipost-change', (e) => {
+      const { address, isValid, mode } = e.detail;
+      updateTelemetry(address, isValid, 'change');
+    });
+
+    // 2. Listen for definitive resolution events (e.g. validated 11-digit code or parsed address)
+    widget.addEventListener('nipost-resolve', (e) => {
+      const { address, postcode, formattedDisplay } = e.detail;
+      updateTelemetry(address, true, 'resolve');
+    });
+
+    function updateTelemetry(address, isValid, eventType) {
+      if (isValid) {
+        validityBadge.className = 'status-badge status-valid';
+        validityBadge.textContent = '✓ Valid Postcode';
+      } else {
+        validityBadge.className = 'status-badge status-pending';
+        validityBadge.textContent = 'Resolving Address...';
+      }
+
+      metaPostcode.textContent = address.postcode || '—';
+      metaStateLga.textContent = (address.stateName || address.stateCode || '') + 
+        (address.lgaName ? ` / ${address.lgaName}` : '');
+      metaLandmark.textContent = address.landmark || '—';
+
+      if (address.latitude && address.longitude) {
+        metaCoords.textContent = `${address.latitude.toFixed(4)}, ${address.longitude.toFixed(4)}`;
+      } else {
+        metaCoords.textContent = '—';
+      }
+
+      eventJson.textContent = `// Last Event: nipost-${eventType}\n` + JSON.stringify(address, null, 2);
+    }
+
+    // 3. Native Form Submission: Demonstrating FormData Contract
+    checkoutForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const formData = new FormData(checkoutForm);
+      const output = {};
+      for (const [key, value] of formData.entries()) {
+        output[key] = value;
+      }
+
+      formDataJson.textContent = JSON.stringify(output, null, 2);
+      submissionOutput.style.display = 'block';
+      submissionOutput.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // 4. Quick preset applier
+    function applyPreset(text) {
+      if (widget.setAddress) {
+        widget.setAddress(text);
+      } else {
+        // Fallback for direct input dispatch
+        const input = widget.shadowRoot ? widget.shadowRoot.querySelector('input') : null;
+        if (input) {
+          input.value = text;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    }
+  </script>
+</body>
+</html>

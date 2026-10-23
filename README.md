@@ -14,10 +14,11 @@ A high-performance, zero-allocation Go client library for Nigeria's National Dig
 - **Pluggable Observability**: Zero external dependencies in the core module, with an optional OpenTelemetry module (`github.com/abcubed3/postcode/otelpostcode`).
 - **AI & Agent Native**: Built-in Model Context Protocol (MCP) server (`postcode mcp`), standard LLM function calling schemas (Gemini, OpenAI, Anthropic), and actionable diagnostic self-correction (`postcode.Diagnose`).
 - **Shareable & Printable QR Codes**: Built-in, dependency-free ISO/IEC 18004 QR encoder (`postcode.GenerateQR`) rendering SVG, PNG, Base64 Data URIs, terminal Unicode, and print-ready NIPOST postcode labels.
+- **Web Client Component**: Embeddable `<nipost-address-input>` custom element (`@abcubed3/nipost-address-input`) with smart freeform address parsing, 774 LGA centroids, self-healing diagnostics, and form participation powered by `@abcubed3/postcode-wasm`.
 
 ## Installation
 
-Requires **Go 1.27+**.
+Requires **Go 1.27+** (for Go SDK).
 
 ### Go Library (SDK)
 
@@ -41,6 +42,20 @@ Verify installation:
 
 ```bash
 postcode version
+```
+
+### Web Client Component (`@abcubed3/nipost-address-input`)
+
+Install the embeddable Web Component via npm:
+
+```bash
+npm install @abcubed3/nipost-address-input
+```
+
+Or load directly from a CDN without an installation step:
+
+```html
+<script type="module" src="https://unpkg.com/@abcubed3/nipost-address-input"></script>
 ```
 
 ## Quickstart
@@ -215,6 +230,55 @@ postcode qr EK-01-A03-FK-01 --label --out label.svg --open
 # Encode direct turn-by-turn navigation for delivery couriers
 postcode qr FC-03-B06-AG-12 --payload directions --out abuja-nav.svg
 ```
+
+## Web Client Component (`<nipost-address-input>`)
+
+For web applications, checkout flows, and logistics portals, the repository provides an official embeddable **Web Component** ([`packages/address-input`](packages/address-input)) published on npm as [`@abcubed3/nipost-address-input`](https://www.npmjs.com/package/@abcubed3/nipost-address-input):
+
+- **Framework-Agnostic Web Component**: Runs natively in plain HTML, React, Next.js, Vue, Angular, Svelte, or server-rendered templates (Django, Laravel, Go `html/template`).
+- **Hybrid Dual-Mode UX**:
+  - **Smart Quick-Paste / Search**: Users can paste freeform address strings (e.g. *"Plot 14 Admiralty Way, Lekki Phase 1, Opposite Domino's Pizza, Lagos"*). The disambiguation engine isolates the **State**, **LGA**, **Locality**, **Landmark**, **Street**, and canonical **11-character NIPOST Postcode**.
+  - **Expandable Structured Breakdown**: Toggle to cascading dropdowns for 37 States + FCT and all **774 Nigerian LGAs**.
+- **Form-Associated Custom Element**: Automatically registers with native HTML `<form>` submissions, submitting structured sub-keys (`shipping_address[state]`, `shipping_address[lga]`, `shipping_address[postcode]`, `shipping_address[latitude]`, etc.) with zero custom JavaScript serializers.
+- **Self-Healing Diagnostics**: Visual 5-segment chips (`SS-LL-DDD-AA-UU`) with instant tips for legacy 6-digit codes or illegal units (`00`).
+- **Edge WASM Speed**: Zero external network requests needed for validation or LGA extraction — powered entirely by [`@abcubed3/postcode-wasm`](https://github.com/abcubed3/postcode/tree/main/wasm).
+- **Theming & Design Tokens**: Preset themes (`light`, `dark`, `minimal`, `unstyled`), CSS custom properties (`--nipost-primary`, etc.), and Shadow DOM `::part()` styling.
+
+### HTML Form Integration
+
+```html
+<!-- 1. Drop script in <head> or before </body> -->
+<script type="module" src="https://unpkg.com/@abcubed3/nipost-address-input"></script>
+
+<!-- 2. Embed inside any standard HTML form -->
+<form action="/checkout" method="POST">
+  <nipost-address-input
+    name="shipping_address"
+    placeholder="Enter street, landmark, or 11-digit NIPOST code..."
+    theme="light"
+    required
+  ></nipost-address-input>
+
+  <button type="submit">Place Order</button>
+</form>
+
+<script>
+  const widget = document.querySelector('nipost-address-input');
+
+  // Keystroke-level draft updates
+  widget.addEventListener('nipost-change', (e) => {
+    console.log('Address draft:', e.detail.address);
+  });
+
+  // Canonical NIPOST postcode verified
+  widget.addEventListener('nipost-resolve', (e) => {
+    console.log('Verified Postcode:', e.detail.postcode);
+    console.log('Centroid Coords:', e.detail.address.latitude, e.detail.address.longitude);
+  });
+</script>
+```
+
+> 💻 **Runnable Example**: Check out [`examples/address_input_web/`](examples/address_input_web/) for a ready-to-run interactive checkout demo with live telemetry and `FormData` inspection.
 
 ## Command-Line Interface (`postcode`)
 
@@ -480,7 +544,7 @@ client, err := postcode.NewClient(
 
 ### 6. WebAssembly (WASM) Edge Engine
 
-Run the entire offline validation, diagnostics, and geocoding engine inside Node.js, Deno, Bun, Cloudflare Workers, or web browsers with zero network latency:
+Run the entire offline validation, diagnostics, and geocoding engine inside Node.js, Deno, Bun, Cloudflare Workers, or web browsers with zero network latency (also published as [`@abcubed3/postcode-wasm`](https://www.npmjs.com/package/@abcubed3/postcode-wasm), powering the [`<nipost-address-input>`](#web-client-component-nipost-address-input) frontend component):
 
 ```bash
 # Build WASM binary
@@ -576,6 +640,18 @@ git clone https://github.com/abcubed3/postcode.git ~/.gemini/config/plugins/nipo
 - **Informal Address Disambiguation**: 5-step SOP for extracting and synthesizing postcodes from descriptive landmarks and cross-streets.
 - **Diagnostic Self-Healing**: Automatically repairs typos and invalid segments via `postcode.Diagnose`.
 - **Reference Manuals**: [Grammar & States](skills/nipost-postcode/references/grammar.md), [Lookup Levels](skills/nipost-postcode/references/lookup-levels.md), [Address Disambiguation](skills/nipost-postcode/references/address-disambiguation.md), and [Error Recovery](skills/nipost-postcode/references/error-recovery.md).
+
+## Examples & Demos
+
+Ready-to-run examples and reference integrations in the [`examples/`](examples) directory:
+
+| Example | Domain / Focus | Description | Execution Command |
+| :--- | :--- | :--- | :--- |
+| [`examples/address_input_web/`](examples/address_input_web/) | **Web Client Component** | Embedding `<nipost-address-input>` in an HTML checkout form with real-time telemetry and `FormData` submission. | `open ./examples/address_input_web/index.html` |
+| [`examples/main.go`](examples/main.go) | **Go SDK Tour** | End-to-end tour of local parsing, simulator, graded lookups, autocomplete, and QR generation. | `go run ./examples/main.go` |
+| [`examples/ai_agent_guardrails/`](examples/ai_agent_guardrails/) | **AI Agent Safety** | Logistics dispatcher agent with call ceilings, caching, and auto-downgrade. | `go run ./examples/ai_agent_guardrails/main.go` |
+| [`examples/ai_synthetic_eval/`](examples/ai_synthetic_eval/) | **AI Benchmarking** | Synthetic address generator and evaluation harness for LLMs and NER extractors. | `go run ./examples/ai_synthetic_eval/main.go` |
+| [`examples/wasm_node/`](examples/wasm_node/) | **Edge / WebAssembly** | Running the zero-dependency compiled WebAssembly binary inside Node.js. | `node ./examples/wasm_node/demo.js` |
 
 ## Benchmarks
 

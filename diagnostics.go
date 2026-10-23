@@ -20,7 +20,7 @@ type SegmentDiagnosis struct {
 type DiagnosticReport struct {
 	Input         string             `json:"input"`
 	Valid         bool               `json:"valid"`
-	IsTemporary   bool               `json:"is_temporary,omitempty"`   // True if input is a temporary NIPOST building code (TP-...)
+	IsTemporary   bool               `json:"is_temporary,omitempty"`  // True if input is a temporary NIPOST building code (TP-...)
 	Normalized    string             `json:"normalized,omitempty"`    // Hyphenated canonical form if valid or recoverable
 	SuggestedFix  string             `json:"suggested_fix,omitempty"` // Auto-repaired canonical postcode when deterministically recoverable
 	CleanLength   int                `json:"clean_length"`            // Number of alphanumeric characters found

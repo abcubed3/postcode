@@ -5,7 +5,6 @@ package main
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 	"sync"
@@ -20,32 +19,99 @@ var (
 	currentBase          string
 	currentGoogleMapsKey string
 	client               *postcode.Client
+
+	// Cached global JS constructors to eliminate repeated WASM->JS boundary lookups
+	jsGlobal  js.Value
+	jsObject  js.Value
+	jsArray   js.Value
+	jsPromise js.Value
+	jsError   js.Value
+	jsJSON    js.Value
+
+	// Memoized static reference data and tool schemas
+	staticOnce        sync.Once
+	cachedStatesMap   js.Value
+	cachedRefStates   js.Value
+	cachedOpenAITools js.Value
+	cachedAnthroTools js.Value
+	cachedGeminiTools js.Value
 )
 
-func getOrCreateClient() *postcode.Client {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	if client == nil {
-		var opts []postcode.ClientOption
-		if currentKey != "" {
-			opts = append(opts, postcode.WithAPIKey(currentKey))
-		}
-		if currentBase != "" {
-			opts = append(opts, postcode.WithBaseURL(currentBase))
-		}
-		if currentGoogleMapsKey != "" {
-			opts = append(opts, postcode.WithGoogleMapsKey(currentGoogleMapsKey))
-		}
-		c, err := postcode.NewClient(opts...)
-		if err == nil {
-			client = c
-		}
-	}
-	return client
+func initJSGlobals() {
+	jsGlobal = js.Global()
+	jsObject = jsGlobal.Get("Object")
+	jsArray = jsGlobal.Get("Array")
+	jsPromise = jsGlobal.Get("Promise")
+	jsError = jsGlobal.Get("Error")
+	jsJSON = jsGlobal.Get("JSON")
 }
 
-func resetClientLocked() {
-	var opts []postcode.ClientOption
+func newJSObject() js.Value {
+	return jsObject.New()
+}
+
+func newJSArray(n int) js.Value {
+	if n <= 0 {
+		return jsArray.New()
+	}
+	return jsArray.New(n)
+}
+
+func initStaticCatalogs() {
+	staticOnce.Do(func() {
+		// 1. listStates() dictionary
+		statesObj := newJSObject()
+		statesList := make([]postcode.NamedCode, 0, len(postcode.NigerianStates))
+		for code, rec := range postcode.NigerianStates {
+			st := newJSObject()
+			st.Set("code", rec.Code)
+			st.Set("name", rec.Name)
+			st.Set("capital", rec.Capital)
+			st.Set("latitude", rec.Latitude)
+			st.Set("longitude", rec.Longitude)
+			st.Set("zone", rec.Zone)
+			st.Set("Code", rec.Code)
+			st.Set("Name", rec.Name)
+			st.Set("Capital", rec.Capital)
+			st.Set("Latitude", rec.Latitude)
+			st.Set("Longitude", rec.Longitude)
+			st.Set("Zone", rec.Zone)
+			statesObj.Set(code, st)
+
+			statesList = append(statesList, postcode.NamedCode{
+				Code: code,
+				Name: rec.Name,
+			})
+		}
+		cachedStatesMap = statesObj
+
+		// 2. referenceStatesOffline() sorted array
+		slices.SortFunc(statesList, func(a, b postcode.NamedCode) int {
+			return cmp.Compare(a.Code, b.Code)
+		})
+		cachedRefStates = namedCodesToJS(statesList)
+
+		// 3. Pre-built Agent Tool declarations
+		tools := postcode.DefaultAgentTools()
+		n := len(tools)
+		oai := newJSArray(n)
+		ant := newJSArray(n)
+		gem := newJSArray(n)
+		for i, t := range tools {
+			oai.SetIndex(i, toJS(t.OpenAITool()))
+			ant.SetIndex(i, toJS(t.AnthropicTool()))
+			gem.SetIndex(i, toJS(t.GeminiFunctionDeclaration()))
+		}
+		cachedOpenAITools = oai
+		cachedAnthroTools = ant
+		cachedGeminiTools = gem
+	})
+}
+
+func buildClientOptions() []postcode.ClientOption {
+	opts := []postcode.ClientOption{
+		postcode.WithDefaultCache(),
+	}
 	if currentKey != "" {
 		opts = append(opts, postcode.WithAPIKey(currentKey))
 	}
@@ -55,39 +121,525 @@ func resetClientLocked() {
 	if currentGoogleMapsKey != "" {
 		opts = append(opts, postcode.WithGoogleMapsKey(currentGoogleMapsKey))
 	}
-	c, err := postcode.NewClient(opts...)
-	if err == nil {
-		client = c
+	return opts
+}
+
+func getOrCreateClient() *postcode.Client {
+	clientMu.RLock()
+	c := client
+	clientMu.RUnlock()
+	if c != nil {
+		return c
 	}
+
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	if client == nil {
+		if created, err := postcode.NewClient(buildClientOptions()...); err == nil {
+			client = created
+		}
+	}
+	return client
+}
+
+func resetClientLocked() {
+	if created, err := postcode.NewClient(buildClientOptions()...); err == nil {
+		client = created
+	}
+}
+
+// ============================================================================
+// Direct, Zero-Reflection Go -> js.Value Builders
+// ============================================================================
+
+func stringsToJS(list []string) js.Value {
+	arr := newJSArray(len(list))
+	for i, s := range list {
+		arr.SetIndex(i, s)
+	}
+	return arr
+}
+
+func floatsToJS(list []float64) js.Value {
+	arr := newJSArray(len(list))
+	for i, f := range list {
+		arr.SetIndex(i, f)
+	}
+	return arr
+}
+
+func namedCodesToJS(list []postcode.NamedCode) js.Value {
+	arr := newJSArray(len(list))
+	for i, item := range list {
+		obj := newJSObject()
+		obj.Set("code", item.Code)
+		if item.Name != "" {
+			obj.Set("name", item.Name)
+		}
+		arr.SetIndex(i, obj)
+	}
+	return arr
+}
+
+func segmentsToJS(s postcode.Segments) js.Value {
+	obj := newJSObject()
+	obj.Set("state", s.State)
+	obj.Set("lga", s.LGA)
+	obj.Set("district", s.District)
+	obj.Set("area", s.Area)
+	obj.Set("unit", s.Unit)
+	return obj
+}
+
+func assembledToJS(a postcode.AssembledPostcode) js.Value {
+	obj := newJSObject()
+	obj.Set("postcode", a.Postcode)
+	obj.Set("display", a.Display)
+	obj.Set("compact", a.Compact)
+	return obj
+}
+
+func segmentDiagnosesToJS(list []postcode.SegmentDiagnosis) js.Value {
+	arr := newJSArray(len(list))
+	for i, d := range list {
+		obj := newJSObject()
+		obj.Set("segment", d.Segment)
+		obj.Set("input", d.Input)
+		obj.Set("expected", d.Expected)
+		obj.Set("message", d.Message)
+		if len(d.Suggestions) > 0 {
+			obj.Set("suggestions", stringsToJS(d.Suggestions))
+		}
+		arr.SetIndex(i, obj)
+	}
+	return arr
+}
+
+func diagnosticReportToJS(r postcode.DiagnosticReport) js.Value {
+	obj := newJSObject()
+	obj.Set("input", r.Input)
+	obj.Set("valid", r.Valid)
+	if r.IsTemporary {
+		obj.Set("is_temporary", true)
+	}
+	if r.Normalized != "" {
+		obj.Set("normalized", r.Normalized)
+	}
+	if r.SuggestedFix != "" {
+		obj.Set("suggested_fix", r.SuggestedFix)
+	}
+	obj.Set("clean_length", r.CleanLength)
+	if len(r.Diagnoses) > 0 {
+		obj.Set("diagnoses", segmentDiagnosesToJS(r.Diagnoses))
+	}
+	if r.ActionableTip != "" {
+		obj.Set("actionable_tip", r.ActionableTip)
+	}
+	obj.Set("format_score", r.FormatScore)
+	return obj
+}
+
+func locationToJS(loc postcode.Location) js.Value {
+	obj := newJSObject()
+	obj.Set("postcode", loc.Postcode)
+	obj.Set("compact", loc.Compact)
+	obj.Set("latitude", loc.Latitude)
+	obj.Set("longitude", loc.Longitude)
+	if loc.Address != "" {
+		obj.Set("address", loc.Address)
+	}
+	obj.Set("state_code", loc.StateCode)
+	obj.Set("state_name", loc.StateName)
+	if loc.LGACode != "" {
+		obj.Set("lga_code", loc.LGACode)
+	}
+	if loc.LGAName != "" {
+		obj.Set("lga_name", loc.LGAName)
+	}
+	if loc.Zone != "" {
+		obj.Set("zone", loc.Zone)
+	}
+	obj.Set("precision", loc.Precision.String())
+	return obj
+}
+
+func nearbyUnitToJS(u postcode.NearbyUnit) js.Value {
+	obj := newJSObject()
+	obj.Set("postcode", u.Postcode)
+	obj.Set("display", u.Display)
+	obj.Set("distance_m", u.DistanceM)
+	obj.Set("confidence", u.Confidence)
+	if u.StateName != "" {
+		obj.Set("state_name", u.StateName)
+	}
+	if u.LGAName != "" {
+		obj.Set("lga_name", u.LGAName)
+	}
+	if u.LocalityName != "" {
+		obj.Set("locality_name", u.LocalityName)
+	}
+	if u.Address != "" {
+		obj.Set("address", u.Address)
+	}
+	return obj
+}
+
+func nearbyUnitsToJS(units []postcode.NearbyUnit) js.Value {
+	arr := newJSArray(len(units))
+	for i, u := range units {
+		arr.SetIndex(i, nearbyUnitToJS(u))
+	}
+	return arr
+}
+
+func reverseResponseToJS(r *postcode.ReverseResponse) js.Value {
+	obj := newJSObject()
+	if r == nil {
+		return obj
+	}
+	obj.Set("found", r.Found)
+	obj.Set("coordinate", floatsToJS(r.Coordinate))
+	if r.Unit != nil {
+		obj.Set("unit", nearbyUnitToJS(*r.Unit))
+		if p, err := postcode.Parse(r.Unit.Postcode); err == nil {
+			obj.Set("state_code", p.State())
+			if st, ok := postcode.LookupState(p.State()); ok {
+				obj.Set("state_name", st.Name)
+			}
+			obj.Set("lga_code", p.LGA())
+			if lga, ok := postcode.LookupLGA(p.State(), p.LGA()); ok {
+				obj.Set("lga_name", lga.Name)
+			}
+			obj.Set("postcode", p.Formatted())
+		}
+	}
+	if r.Area != "" {
+		obj.Set("area", r.Area)
+	}
+	if r.District != "" {
+		obj.Set("district", r.District)
+	}
+	if r.State != "" {
+		obj.Set("state", r.State)
+	}
+	if r.Message != "" {
+		obj.Set("message", r.Message)
+	}
+	obj.Set("radius_m", r.RadiusM)
+	return obj
+}
+
+func lookupResponseToJS(r *postcode.LookupResponse) js.Value {
+	obj := newJSObject()
+	if r == nil {
+		return obj
+	}
+	obj.Set("postcode", r.Postcode)
+	obj.Set("valid", r.Valid)
+	if r.Temporary {
+		obj.Set("temporary", true)
+	}
+	if r.AdministrativeAddress != nil {
+		adm := newJSObject()
+		a := r.AdministrativeAddress
+		if a.State != "" {
+			adm.Set("state", a.State)
+		}
+		if a.StateName != "" {
+			adm.Set("state_name", a.StateName)
+		}
+		if a.LGA != "" {
+			adm.Set("lga", a.LGA)
+		}
+		if a.LGAName != "" {
+			adm.Set("lga_name", a.LGAName)
+		}
+		if a.District != "" {
+			adm.Set("district", a.District)
+		}
+		if a.DistrictName != "" {
+			adm.Set("district_name", a.DistrictName)
+		}
+		if a.Area != "" {
+			adm.Set("area", a.Area)
+		}
+		if a.AreaName != "" {
+			adm.Set("area_name", a.AreaName)
+		}
+		if a.Unit != "" {
+			adm.Set("unit", a.Unit)
+		}
+		if a.Zone != "" {
+			adm.Set("zone", a.Zone)
+		}
+		if a.LocalityName != "" {
+			adm.Set("locality_name", a.LocalityName)
+		}
+		obj.Set("administrative_address", adm)
+	}
+	if r.RecentHouseAddress != nil {
+		rha := newJSObject()
+		h := r.RecentHouseAddress
+		if h.Address != "" {
+			rha.Set("address", h.Address)
+		}
+		if h.Recent != "" {
+			rha.Set("recent", h.Recent)
+		}
+		if h.HouseNumber != "" {
+			rha.Set("house_number", h.HouseNumber)
+		}
+		if h.StreetName != "" {
+			rha.Set("street_name", h.StreetName)
+		}
+		if h.LocalityName != "" {
+			rha.Set("locality_name", h.LocalityName)
+		}
+		obj.Set("recent_house_address", rha)
+	}
+	if r.BuildingUseStatus != "" {
+		obj.Set("building_use_status", r.BuildingUseStatus)
+	}
+	if len(r.OtherBuildingInfo) > 0 {
+		obj.Set("other_building_info", toJS(r.OtherBuildingInfo))
+	}
+	if r.PointGeometry != nil {
+		pg := newJSObject()
+		if r.PointGeometry.Type != "" {
+			pg.Set("type", r.PointGeometry.Type)
+		}
+		pg.Set("coordinates", floatsToJS(r.PointGeometry.Coordinates))
+		obj.Set("point_geometry", pg)
+	}
+	return obj
+}
+
+func autocompleteResponseToJS(r *postcode.AutocompleteResponse) js.Value {
+	obj := newJSObject()
+	if r == nil {
+		return obj
+	}
+	obj.Set("segment", r.Segment)
+	sug := newJSArray(len(r.Suggestions))
+	for i, s := range r.Suggestions {
+		item := newJSObject()
+		item.Set("code", s.Code)
+		item.Set("label", s.Label)
+		sug.SetIndex(i, item)
+	}
+	obj.Set("suggestions", sug)
+	return obj
+}
+
+func agentMetricsToJS(m postcode.AgentGuardMetrics) js.Value {
+	obj := newJSObject()
+	obj.Set("total_calls", m.TotalCalls)
+	obj.Set("commercial_calls", m.CommercialCalls)
+	obj.Set("downgraded_calls", m.DowngradedCalls)
+	obj.Set("offline_fallbacks", m.OfflineFallbacks)
+	return obj
+}
+
+func syntheticAddressesToJS(list []postcode.SyntheticAddress) js.Value {
+	arr := newJSArray(len(list))
+	for i, a := range list {
+		obj := newJSObject()
+		obj.Set("raw_text", a.RawText)
+		obj.Set("expected_state", a.ExpectedState)
+		obj.Set("expected_state_code", a.ExpectedStateCode)
+		if a.ExpectedLGA != "" {
+			obj.Set("expected_lga", a.ExpectedLGA)
+		}
+		if a.ExpectedPostcode != "" {
+			obj.Set("expected_postcode", a.ExpectedPostcode)
+		}
+		if a.ExpectedLat != 0 {
+			obj.Set("expected_lat", a.ExpectedLat)
+		}
+		if a.ExpectedLng != 0 {
+			obj.Set("expected_lng", a.ExpectedLng)
+		}
+		if a.NoiseType != "" {
+			obj.Set("noise_type", a.NoiseType)
+		}
+		arr.SetIndex(i, obj)
+	}
+	return arr
+}
+
+func addressExtractionToJS(e postcode.AddressExtraction) js.Value {
+	obj := newJSObject()
+	obj.Set("raw", e.Raw)
+	if e.Postcode != "" {
+		obj.Set("postcode", e.Postcode)
+	}
+	obj.Set("postcode_valid", e.PostcodeValid)
+	if e.LegacyPostcode != "" {
+		obj.Set("legacy_postcode", e.LegacyPostcode)
+	}
+	if e.SuggestedPrefix != "" {
+		obj.Set("suggested_prefix", e.SuggestedPrefix)
+	}
+	if e.StateCode != "" {
+		obj.Set("state_code", e.StateCode)
+	}
+	if e.StateName != "" {
+		obj.Set("state_name", e.StateName)
+	}
+	if e.LGACode != "" {
+		obj.Set("lga_code", e.LGACode)
+	}
+	if e.LGAName != "" {
+		obj.Set("lga_name", e.LGAName)
+	}
+	if e.Locality != "" {
+		obj.Set("locality", e.Locality)
+	}
+	if e.Street != "" {
+		obj.Set("street", e.Street)
+	}
+	if e.Landmark != "" {
+		obj.Set("landmark", e.Landmark)
+	}
+	if e.Latitude != 0 {
+		obj.Set("latitude", e.Latitude)
+	}
+	if e.Longitude != 0 {
+		obj.Set("longitude", e.Longitude)
+	}
+	obj.Set("confidence", e.Confidence)
+	return obj
+}
+
+func stateRecordsToJS(list []postcode.StateRecord) js.Value {
+	arr := newJSArray(len(list))
+	for i, rec := range list {
+		st := newJSObject()
+		st.Set("code", rec.Code)
+		st.Set("name", rec.Name)
+		st.Set("capital", rec.Capital)
+		st.Set("latitude", rec.Latitude)
+		st.Set("longitude", rec.Longitude)
+		st.Set("zone", rec.Zone)
+		st.Set("Code", rec.Code)
+		st.Set("Name", rec.Name)
+		st.Set("Capital", rec.Capital)
+		st.Set("Latitude", rec.Latitude)
+		st.Set("Longitude", rec.Longitude)
+		st.Set("Zone", rec.Zone)
+		arr.SetIndex(i, st)
+	}
+	return arr
 }
 
 func toJS(v any) js.Value {
-	b, err := json.Marshal(v)
-	if err != nil {
-		obj := js.Global().Get("Object").New()
-		obj.Set("error", err.Error())
-		return obj
+	if v == nil {
+		return js.Null()
 	}
-	return js.Global().Get("JSON").Call("parse", string(b))
+	switch val := v.(type) {
+	case js.Value:
+		return val
+	case string:
+		return js.ValueOf(val)
+	case bool:
+		return js.ValueOf(val)
+	case int:
+		return js.ValueOf(val)
+	case int64:
+		return js.ValueOf(val)
+	case float64:
+		return js.ValueOf(val)
+	case postcode.QRPayloadType:
+		return js.ValueOf(string(val))
+	case postcode.QRErrorCorrectionLevel:
+		return js.ValueOf(string(val))
+	case []string:
+		return stringsToJS(val)
+	case []float64:
+		return floatsToJS(val)
+	case []any:
+		arr := newJSArray(len(val))
+		for i, elem := range val {
+			arr.SetIndex(i, toJS(elem))
+		}
+		return arr
+	case map[string]any:
+		obj := newJSObject()
+		for k, elem := range val {
+			obj.Set(k, toJS(elem))
+		}
+		return obj
+	case postcode.DiagnosticReport:
+		return diagnosticReportToJS(val)
+	case []postcode.SegmentDiagnosis:
+		return segmentDiagnosesToJS(val)
+	case postcode.Segments:
+		return segmentsToJS(val)
+	case *postcode.Segments:
+		if val == nil {
+			return js.Null()
+		}
+		return segmentsToJS(*val)
+	case postcode.AssembledPostcode:
+		return assembledToJS(val)
+	case *postcode.AssembledPostcode:
+		if val == nil {
+			return js.Null()
+		}
+		return assembledToJS(*val)
+	case postcode.Location:
+		return locationToJS(val)
+	case *postcode.Location:
+		if val == nil {
+			return js.Null()
+		}
+		return locationToJS(*val)
+	case []postcode.NamedCode:
+		return namedCodesToJS(val)
+	case []postcode.NearbyUnit:
+		return nearbyUnitsToJS(val)
+	case *postcode.NearbyResponse:
+		if val == nil {
+			return js.Null()
+		}
+		obj := newJSObject()
+		obj.Set("results", nearbyUnitsToJS(val.Results))
+		return obj
+	case *postcode.ReverseResponse:
+		return reverseResponseToJS(val)
+	case *postcode.LookupResponse:
+		return lookupResponseToJS(val)
+	case *postcode.AutocompleteResponse:
+		return autocompleteResponseToJS(val)
+	case postcode.AgentGuardMetrics:
+		return agentMetricsToJS(val)
+	case []postcode.SyntheticAddress:
+		return syntheticAddressesToJS(val)
+	case postcode.AddressExtraction:
+		return addressExtractionToJS(val)
+	case []postcode.StateRecord:
+		return stateRecordsToJS(val)
+	default:
+		return newJSObject()
+	}
 }
 
 func jsPromiseReject(msg string) js.Value {
-	promiseConstructor := js.Global().Get("Promise")
 	var rejectHandler js.Func
 	rejectHandler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		defer rejectHandler.Release()
-		errObj := js.Global().Get("Error").New(msg)
+		errObj := jsError.New(msg)
 		promiseArgs[1].Invoke(errObj)
 		return nil
 	})
-	return promiseConstructor.New(rejectHandler)
+	return jsPromise.New(rejectHandler)
 }
 
 func validateSingle(code string) js.Value {
 	p, err := postcode.Parse(code)
 	if err != nil {
 		diag := postcode.Diagnose(code)
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("input", code)
 		obj.Set("error", err.Error())
@@ -104,7 +656,7 @@ func validateSingle(code string) js.Value {
 		stateName = rec.Name
 	}
 
-	obj := js.Global().Get("Object").New()
+	obj := newJSObject()
 	obj.Set("valid", true)
 	obj.Set("postcode", p.Formatted())
 	obj.Set("compact", p.Compact())
@@ -119,7 +671,7 @@ func validateSingle(code string) js.Value {
 
 func jsValidate(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("error", "code parameter is required")
 		return obj
@@ -129,11 +681,11 @@ func jsValidate(this js.Value, args []js.Value) any {
 
 func jsValidateBatch(this js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].Type() != js.TypeObject {
-		return js.Global().Get("Array").New()
+		return newJSArray(0)
 	}
 	arr := args[0]
 	n := arr.Length()
-	results := js.Global().Get("Array").New(n)
+	results := newJSArray(n)
 	for i := 0; i < n; i++ {
 		code := arr.Index(i).String()
 		results.SetIndex(i, validateSingle(code))
@@ -143,12 +695,11 @@ func jsValidateBatch(this js.Value, args []js.Value) any {
 
 func jsDiagnose(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("error", "code parameter is required")
 		return obj
 	}
-	report := postcode.Diagnose(args[0].String())
-	return toJS(report)
+	return diagnosticReportToJS(postcode.Diagnose(args[0].String()))
 }
 
 func jsIsTemporary(this js.Value, args []js.Value) any {
@@ -167,7 +718,7 @@ func jsFormatTemporary(this js.Value, args []js.Value) any {
 
 func jsParse(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("error", "code parameter is required")
 		return obj
@@ -176,7 +727,7 @@ func jsParse(this js.Value, args []js.Value) any {
 	raw := args[0].String()
 	p, err := postcode.Parse(raw)
 	if err != nil {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("error", err.Error())
 		return obj
@@ -188,7 +739,7 @@ func jsParse(this js.Value, args []js.Value) any {
 		capital = st.Capital
 	}
 
-	obj := js.Global().Get("Object").New()
+	obj := newJSObject()
 	obj.Set("valid", true)
 	obj.Set("input", raw)
 	obj.Set("postcode", p.Formatted())
@@ -240,7 +791,7 @@ func jsFormat(this js.Value, args []js.Value) any {
 
 func jsAssemble(this js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].Type() != js.TypeObject {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("error", "segments object is required with state, lga, district, area, unit")
 		return obj
@@ -256,13 +807,13 @@ func jsAssemble(this js.Value, args []js.Value) any {
 
 	assembled, err := postcode.AssembleSegments(segs)
 	if err != nil {
-		res := js.Global().Get("Object").New()
+		res := newJSObject()
 		res.Set("valid", false)
 		res.Set("error", err.Error())
 		return res
 	}
 
-	res := js.Global().Get("Object").New()
+	res := newJSObject()
 	res.Set("valid", true)
 	res.Set("postcode", assembled.Postcode)
 	res.Set("display", assembled.Display)
@@ -272,7 +823,7 @@ func jsAssemble(this js.Value, args []js.Value) any {
 
 func jsNormalizeSegments(this js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].Type() != js.TypeObject {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("error", "segments object is required with state, lga, district, area, unit")
 		return obj
 	}
@@ -284,14 +835,7 @@ func jsNormalizeSegments(this js.Value, args []js.Value) any {
 		Area:     obj.Get("area").String(),
 		Unit:     obj.Get("unit").String(),
 	}
-	norm := postcode.NormalizeSegments(segs)
-	res := js.Global().Get("Object").New()
-	res.Set("state", norm.State)
-	res.Set("lga", norm.LGA)
-	res.Set("district", norm.District)
-	res.Set("area", norm.Area)
-	res.Set("unit", norm.Unit)
-	return res
+	return segmentsToJS(postcode.NormalizeSegments(segs))
 }
 
 func jsAssembleOnline(this js.Value, args []js.Value) any {
@@ -307,7 +851,6 @@ func jsAssembleOnline(this js.Value, args []js.Value) any {
 		Unit:     obj.Get("unit").String(),
 	}
 
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -317,17 +860,15 @@ func jsAssembleOnline(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			assembled, err := c.Assemble(context.Background(), segs)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			res := js.Global().Get("Object").New()
+			res := newJSObject()
 			res.Set("valid", true)
 			res.Set("postcode", assembled.Postcode)
 			res.Set("display", assembled.Display)
@@ -336,7 +877,7 @@ func jsAssembleOnline(this js.Value, args []js.Value) any {
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsDisassembleOnline(this js.Value, args []js.Value) any {
@@ -344,7 +885,6 @@ func jsDisassembleOnline(this js.Value, args []js.Value) any {
 		return jsPromiseReject("code parameter is required")
 	}
 	code := args[0].String()
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -354,26 +894,24 @@ func jsDisassembleOnline(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			segs, err := c.Disassemble(context.Background(), code)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			resolve.Invoke(toJS(segs))
+			resolve.Invoke(segmentsToJS(*segs))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsDisassemble(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("error", "code parameter is required")
 		return obj
@@ -381,13 +919,13 @@ func jsDisassemble(this js.Value, args []js.Value) any {
 	code := args[0].String()
 	p, err := postcode.Parse(code)
 	if err != nil {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("valid", false)
 		obj.Set("error", err.Error())
 		return obj
 	}
 
-	obj := js.Global().Get("Object").New()
+	obj := newJSObject()
 	obj.Set("valid", true)
 	obj.Set("state", p.State())
 	obj.Set("lga", p.LGA())
@@ -397,22 +935,8 @@ func jsDisassemble(this js.Value, args []js.Value) any {
 	return obj
 }
 
-func jsResolveLocation(this js.Value, args []js.Value) any {
-	if len(args) == 0 {
-		obj := js.Global().Get("Object").New()
-		obj.Set("error", "code parameter is required")
-		return obj
-	}
-
-	p, err := postcode.Parse(args[0].String())
-	if err != nil {
-		obj := js.Global().Get("Object").New()
-		obj.Set("error", err.Error())
-		return obj
-	}
-
-	loc := p.Location()
-	jsLoc := toJS(loc)
+func enrichLocationJS(loc postcode.Location) js.Value {
+	jsLoc := locationToJS(loc)
 	jsLoc.Set("state", loc.StateName)
 	jsLoc.Set("lga", loc.LGAName)
 	jsLoc.Set("google_maps_url", loc.GoogleMapsURL())
@@ -423,13 +947,29 @@ func jsResolveLocation(this js.Value, args []js.Value) any {
 	return jsLoc
 }
 
+func jsResolveLocation(this js.Value, args []js.Value) any {
+	if len(args) == 0 {
+		obj := newJSObject()
+		obj.Set("error", "code parameter is required")
+		return obj
+	}
+
+	p, err := postcode.Parse(args[0].String())
+	if err != nil {
+		obj := newJSObject()
+		obj.Set("error", err.Error())
+		return obj
+	}
+
+	return enrichLocationJS(p.Location())
+}
+
 func jsResolveLocationOnline(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
 		return jsPromiseReject("code parameter is required")
 	}
 
 	code := args[0].String()
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -440,64 +980,56 @@ func jsResolveLocationOnline(this js.Value, args []js.Value) any {
 
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 
 			loc, err := c.ResolveLocation(context.Background(), code)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
 
-			jsLoc := toJS(loc)
-			jsLoc.Set("state", loc.StateName)
-			jsLoc.Set("lga", loc.LGAName)
-			jsLoc.Set("google_maps_url", loc.GoogleMapsURL())
-			jsLoc.Set("google_maps_directions_url", loc.GoogleMapsDirectionsURL())
-			jsLoc.Set("apple_maps_url", loc.AppleMapsURL())
-			jsLoc.Set("osm_url", loc.OpenStreetMapURL())
-			jsLoc.Set("search_query", loc.SearchQuery())
-			resolve.Invoke(jsLoc)
+			resolve.Invoke(enrichLocationJS(*loc))
 		}()
 		return nil
 	})
 
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
+}
+
+func parseJSBuildingRecord(obj js.Value) postcode.BuildingRecord {
+	rec := postcode.BuildingRecord{
+		Postcode:  obj.Get("postcode").String(),
+		Latitude:  obj.Get("latitude").Float(),
+		Longitude: obj.Get("longitude").Float(),
+	}
+	if v := obj.Get("address"); v.Type() == js.TypeString {
+		rec.Address = v.String()
+	}
+	if v := obj.Get("state_code"); v.Type() == js.TypeString {
+		rec.StateCode = v.String()
+	}
+	if v := obj.Get("state_name"); v.Type() == js.TypeString {
+		rec.StateName = v.String()
+	}
+	if v := obj.Get("lga_code"); v.Type() == js.TypeString {
+		rec.LGACode = v.String()
+	}
+	if v := obj.Get("lga_name"); v.Type() == js.TypeString {
+		rec.LGAName = v.String()
+	}
+	if v := obj.Get("zone"); v.Type() == js.TypeString {
+		rec.Zone = v.String()
+	}
+	return rec
 }
 
 func jsRegisterBuilding(this js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].Type() != js.TypeObject {
 		return false
 	}
-	obj := args[0]
-	rec := postcode.BuildingRecord{
-		Postcode:  obj.Get("postcode").String(),
-		Latitude:  obj.Get("latitude").Float(),
-		Longitude: obj.Get("longitude").Float(),
-	}
-	if obj.Get("address").Type() == js.TypeString {
-		rec.Address = obj.Get("address").String()
-	}
-	if obj.Get("state_code").Type() == js.TypeString {
-		rec.StateCode = obj.Get("state_code").String()
-	}
-	if obj.Get("state_name").Type() == js.TypeString {
-		rec.StateName = obj.Get("state_name").String()
-	}
-	if obj.Get("lga_code").Type() == js.TypeString {
-		rec.LGACode = obj.Get("lga_code").String()
-	}
-	if obj.Get("lga_name").Type() == js.TypeString {
-		rec.LGAName = obj.Get("lga_name").String()
-	}
-	if obj.Get("zone").Type() == js.TypeString {
-		rec.Zone = obj.Get("zone").String()
-	}
-
-	postcode.RegisterKnownBuilding(rec)
+	postcode.RegisterKnownBuilding(parseJSBuildingRecord(args[0]))
 	return true
 }
 
@@ -511,30 +1043,7 @@ func jsRegisterBuildings(this js.Value, args []js.Value) any {
 	for i := 0; i < n; i++ {
 		item := arr.Index(i)
 		if item.Type() == js.TypeObject {
-			rec := postcode.BuildingRecord{
-				Postcode:  item.Get("postcode").String(),
-				Latitude:  item.Get("latitude").Float(),
-				Longitude: item.Get("longitude").Float(),
-			}
-			if item.Get("address").Type() == js.TypeString {
-				rec.Address = item.Get("address").String()
-			}
-			if item.Get("state_code").Type() == js.TypeString {
-				rec.StateCode = item.Get("state_code").String()
-			}
-			if item.Get("state_name").Type() == js.TypeString {
-				rec.StateName = item.Get("state_name").String()
-			}
-			if item.Get("lga_code").Type() == js.TypeString {
-				rec.LGACode = item.Get("lga_code").String()
-			}
-			if item.Get("lga_name").Type() == js.TypeString {
-				rec.LGAName = item.Get("lga_name").String()
-			}
-			if item.Get("zone").Type() == js.TypeString {
-				rec.Zone = item.Get("zone").String()
-			}
-			postcode.RegisterKnownBuilding(rec)
+			postcode.RegisterKnownBuilding(parseJSBuildingRecord(item))
 			count++
 		}
 	}
@@ -542,45 +1051,19 @@ func jsRegisterBuildings(this js.Value, args []js.Value) any {
 }
 
 func jsListStates(this js.Value, args []js.Value) any {
-	obj := js.Global().Get("Object").New()
-	for code, rec := range postcode.NigerianStates {
-		st := js.Global().Get("Object").New()
-		st.Set("code", rec.Code)
-		st.Set("name", rec.Name)
-		st.Set("capital", rec.Capital)
-		st.Set("latitude", rec.Latitude)
-		st.Set("longitude", rec.Longitude)
-		st.Set("zone", rec.Zone)
-		st.Set("Code", rec.Code)
-		st.Set("Name", rec.Name)
-		st.Set("Capital", rec.Capital)
-		st.Set("Latitude", rec.Latitude)
-		st.Set("Longitude", rec.Longitude)
-		st.Set("Zone", rec.Zone)
-		obj.Set(code, st)
-	}
-	return obj
+	initStaticCatalogs()
+	return cachedStatesMap
 }
 
 func jsReferenceStatesOffline(this js.Value, args []js.Value) any {
-	states := make([]postcode.NamedCode, 0, len(postcode.NigerianStates))
-	for code, rec := range postcode.NigerianStates {
-		states = append(states, postcode.NamedCode{
-			Code: code,
-			Name: rec.Name,
-		})
-	}
-	slices.SortFunc(states, func(a, b postcode.NamedCode) int {
-		return cmp.Compare(a.Code, b.Code)
-	})
-	return toJS(states)
+	initStaticCatalogs()
+	return cachedRefStates
 }
 
 func jsReferenceStates(this js.Value, args []js.Value) any {
 	if len(args) > 0 && args[0].Type() == js.TypeBoolean && !args[0].Bool() {
 		return jsReferenceStatesOffline(this, args)
 	}
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -589,37 +1072,24 @@ func jsReferenceStates(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c != nil {
-				states, err := c.ReferenceStates(context.Background())
-				if err == nil {
-					resolve.Invoke(toJS(states))
+				if states, err := c.ReferenceStates(context.Background()); err == nil {
+					resolve.Invoke(namedCodesToJS(states))
 					return
 				}
 			}
-			// Fallback to offline catalog
-			states := make([]postcode.NamedCode, 0, len(postcode.NigerianStates))
-			for code, rec := range postcode.NigerianStates {
-				states = append(states, postcode.NamedCode{
-					Code: code,
-					Name: rec.Name,
-				})
-			}
-			slices.SortFunc(states, func(a, b postcode.NamedCode) int {
-				return cmp.Compare(a.Code, b.Code)
-			})
-			resolve.Invoke(toJS(states))
+			initStaticCatalogs()
+			resolve.Invoke(cachedRefStates)
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsReferenceLGAsOffline(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		return js.Global().Get("Array").New()
+		return newJSArray(0)
 	}
-	state := args[0].String()
-	lgas := postcode.StateLGAs(state)
-	return toJS(lgas)
+	return namedCodesToJS(postcode.StateLGAs(args[0].String()))
 }
 
 func jsReferenceLGAs(this js.Value, args []js.Value) any {
@@ -627,7 +1097,6 @@ func jsReferenceLGAs(this js.Value, args []js.Value) any {
 		return jsPromiseReject("state parameter is required")
 	}
 	state := args[0].String()
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -636,19 +1105,16 @@ func jsReferenceLGAs(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c != nil {
-				lgas, err := c.ReferenceLGAs(context.Background(), state)
-				if err == nil {
-					resolve.Invoke(toJS(lgas))
+				if lgas, err := c.ReferenceLGAs(context.Background(), state); err == nil {
+					resolve.Invoke(namedCodesToJS(lgas))
 					return
 				}
 			}
-			// Fallback to offline
-			lgas := postcode.StateLGAs(state)
-			resolve.Invoke(toJS(lgas))
+			resolve.Invoke(namedCodesToJS(postcode.StateLGAs(state)))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsReferenceDistricts(this js.Value, args []js.Value) any {
@@ -657,7 +1123,6 @@ func jsReferenceDistricts(this js.Value, args []js.Value) any {
 	}
 	state := args[0].String()
 	lga := args[1].String()
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -667,21 +1132,19 @@ func jsReferenceDistricts(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			districts, err := c.ReferenceDistricts(context.Background(), state, lga)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			resolve.Invoke(toJS(districts))
+			resolve.Invoke(namedCodesToJS(districts))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsReferenceAreas(this js.Value, args []js.Value) any {
@@ -691,7 +1154,6 @@ func jsReferenceAreas(this js.Value, args []js.Value) any {
 	state := args[0].String()
 	lga := args[1].String()
 	district := args[2].String()
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -701,26 +1163,24 @@ func jsReferenceAreas(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			areas, err := c.ReferenceAreas(context.Background(), state, lga, district)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			resolve.Invoke(toJS(areas))
+			resolve.Invoke(namedCodesToJS(areas))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsSearchNearbyBuildingsOffline(this js.Value, args []js.Value) any {
 	if len(args) < 2 {
-		return js.Global().Get("Array").New()
+		return newJSArray(0)
 	}
 	lat := args[0].Float()
 	lng := args[1].Float()
@@ -728,13 +1188,12 @@ func jsSearchNearbyBuildingsOffline(this js.Value, args []js.Value) any {
 	if len(args) > 2 && args[2].Type() == js.TypeNumber {
 		radiusM = args[2].Float()
 	}
-	results := postcode.SearchNearbyBuildingsOffline(lat, lng, radiusM)
-	return toJS(results)
+	return nearbyUnitsToJS(postcode.SearchNearbyBuildingsOffline(lat, lng, radiusM))
 }
 
 func jsReverseCoordinatesOffline(this js.Value, args []js.Value) any {
 	if len(args) < 2 {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("found", false)
 		obj.Set("error", "latitude and longitude arguments are required")
 		return obj
@@ -745,12 +1204,37 @@ func jsReverseCoordinatesOffline(this js.Value, args []js.Value) any {
 	if len(args) > 2 && args[2].Type() == js.TypeNumber {
 		maxDist = args[2].Float()
 	}
-	resp := postcode.ReverseCoordinatesOffline(lat, lng, maxDist)
-	return toJS(resp)
+	return reverseResponseToJS(postcode.ReverseCoordinatesOffline(lat, lng, maxDist))
+}
+
+func jsNearestLGA(this js.Value, args []js.Value) any {
+	obj := newJSObject()
+	if len(args) < 2 {
+		obj.Set("found", false)
+		obj.Set("error", "latitude and longitude arguments are required")
+		return obj
+	}
+	lat := args[0].Float()
+	lng := args[1].Float()
+	rec, distM, found := postcode.NearestLGA(lat, lng)
+	obj.Set("found", found)
+	if !found {
+		return obj
+	}
+	obj.Set("state_code", rec.StateCode)
+	if st, ok := postcode.LookupState(rec.StateCode); ok {
+		obj.Set("state_name", st.Name)
+	}
+	obj.Set("lga_code", rec.LGACode)
+	obj.Set("lga_name", rec.Name)
+	obj.Set("latitude", rec.Latitude)
+	obj.Set("longitude", rec.Longitude)
+	obj.Set("distance_meters", distM)
+	obj.Set("postcode_prefix", rec.StateCode+"-"+rec.LGACode)
+	return obj
 }
 
 func jsHealth(this js.Value, args []js.Value) any {
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -760,22 +1244,20 @@ func jsHealth(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			if err := c.Health(context.Background()); err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			res := js.Global().Get("Object").New()
+			res := newJSObject()
 			res.Set("status", "ok")
 			resolve.Invoke(res)
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsSetAPIKey(this js.Value, args []js.Value) any {
@@ -821,16 +1303,16 @@ func jsConfigure(this js.Value, args []js.Value) any {
 	optObj := args[0]
 	clientMu.Lock()
 	defer clientMu.Unlock()
-	if optObj.Get("apiKey").Type() == js.TypeString {
-		currentKey = optObj.Get("apiKey").String()
+	if v := optObj.Get("apiKey"); v.Type() == js.TypeString {
+		currentKey = v.String()
 	}
-	if optObj.Get("baseURL").Type() == js.TypeString {
-		currentBase = optObj.Get("baseURL").String()
+	if v := optObj.Get("baseURL"); v.Type() == js.TypeString {
+		currentBase = v.String()
 	}
-	if optObj.Get("googleMapsApiKey").Type() == js.TypeString {
-		currentGoogleMapsKey = optObj.Get("googleMapsApiKey").String()
-	} else if optObj.Get("googleMapsKey").Type() == js.TypeString {
-		currentGoogleMapsKey = optObj.Get("googleMapsKey").String()
+	if v := optObj.Get("googleMapsApiKey"); v.Type() == js.TypeString {
+		currentGoogleMapsKey = v.String()
+	} else if v := optObj.Get("googleMapsKey"); v.Type() == js.TypeString {
+		currentGoogleMapsKey = v.String()
 	}
 	resetClientLocked()
 	return true
@@ -847,7 +1329,6 @@ func jsLookup(this js.Value, args []js.Value) any {
 		level = args[1].Int()
 	}
 
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -858,24 +1339,22 @@ func jsLookup(this js.Value, args []js.Value) any {
 
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 
 			resp, err := c.Lookup(context.Background(), code, postcode.LookupLevel(level))
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
 
-			resolve.Invoke(toJS(resp))
+			resolve.Invoke(lookupResponseToJS(resp))
 		}()
 		return nil
 	})
 
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsAutocomplete(this js.Value, args []js.Value) any {
@@ -884,7 +1363,6 @@ func jsAutocomplete(this js.Value, args []js.Value) any {
 	}
 	query := args[0].String()
 
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -894,21 +1372,19 @@ func jsAutocomplete(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			resp, err := c.Autocomplete(context.Background(), query)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			resolve.Invoke(toJS(resp))
+			resolve.Invoke(autocompleteResponseToJS(resp))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsNearby(this js.Value, args []js.Value) any {
@@ -918,7 +1394,7 @@ func jsNearby(this js.Value, args []js.Value) any {
 
 	var targetCode string
 	var lat, lng float64
-	radiusM := 300.0 // default 300m
+	radiusM := 300.0
 	limit := 10
 
 	if args[0].Type() == js.TypeString {
@@ -941,17 +1417,17 @@ func jsNearby(this js.Value, args []js.Value) any {
 		}
 	} else if args[0].Type() == js.TypeObject {
 		paramsObj := args[0]
-		if paramsObj.Get("postcode").Type() == js.TypeString {
-			targetCode = paramsObj.Get("postcode").String()
-		} else if paramsObj.Get("code").Type() == js.TypeString {
-			targetCode = paramsObj.Get("code").String()
+		if v := paramsObj.Get("postcode"); v.Type() == js.TypeString {
+			targetCode = v.String()
+		} else if v := paramsObj.Get("code"); v.Type() == js.TypeString {
+			targetCode = v.String()
 		}
 
-		if paramsObj.Get("latitude").Type() == js.TypeNumber {
-			lat = paramsObj.Get("latitude").Float()
+		if v := paramsObj.Get("latitude"); v.Type() == js.TypeNumber {
+			lat = v.Float()
 		}
-		if paramsObj.Get("longitude").Type() == js.TypeNumber {
-			lng = paramsObj.Get("longitude").Float()
+		if v := paramsObj.Get("longitude"); v.Type() == js.TypeNumber {
+			lng = v.Float()
 		}
 
 		if lat == 0 && lng == 0 && targetCode != "" {
@@ -964,18 +1440,18 @@ func jsNearby(this js.Value, args []js.Value) any {
 			lng = loc.Longitude
 		}
 
-		if paramsObj.Get("radius_m").Type() == js.TypeNumber {
-			radiusM = paramsObj.Get("radius_m").Float()
-		} else if paramsObj.Get("radiusKm").Type() == js.TypeNumber {
-			radiusM = paramsObj.Get("radiusKm").Float() * 1000.0
-		} else if paramsObj.Get("radius_km").Type() == js.TypeNumber {
-			radiusM = paramsObj.Get("radius_km").Float() * 1000.0
-		} else if paramsObj.Get("radius").Type() == js.TypeNumber {
-			radiusM = paramsObj.Get("radius").Float()
+		if v := paramsObj.Get("radius_m"); v.Type() == js.TypeNumber {
+			radiusM = v.Float()
+		} else if v := paramsObj.Get("radiusKm"); v.Type() == js.TypeNumber {
+			radiusM = v.Float() * 1000.0
+		} else if v := paramsObj.Get("radius_km"); v.Type() == js.TypeNumber {
+			radiusM = v.Float() * 1000.0
+		} else if v := paramsObj.Get("radius"); v.Type() == js.TypeNumber {
+			radiusM = v.Float()
 		}
 
-		if paramsObj.Get("limit").Type() == js.TypeNumber {
-			limit = paramsObj.Get("limit").Int()
+		if v := paramsObj.Get("limit"); v.Type() == js.TypeNumber {
+			limit = v.Int()
 		}
 	}
 
@@ -990,7 +1466,6 @@ func jsNearby(this js.Value, args []js.Value) any {
 		RadiusM:   radiusM,
 	}
 
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -1000,14 +1475,12 @@ func jsNearby(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			resp, err := c.Nearby(context.Background(), params)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
 			if limit > 0 && len(resp.Results) > limit {
@@ -1017,7 +1490,7 @@ func jsNearby(this js.Value, args []js.Value) any {
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsReverseGeocode(this js.Value, args []js.Value) any {
@@ -1038,14 +1511,14 @@ func jsReverseGeocode(this js.Value, args []js.Value) any {
 		paramsObj := args[0]
 		lat = paramsObj.Get("latitude").Float()
 		lng = paramsObj.Get("longitude").Float()
-		if paramsObj.Get("max_distance_m").Type() == js.TypeNumber {
-			maxDist = paramsObj.Get("max_distance_m").Float()
-		} else if paramsObj.Get("maxDistanceKm").Type() == js.TypeNumber {
-			maxDist = paramsObj.Get("maxDistanceKm").Float() * 1000.0
-		} else if paramsObj.Get("maxDistanceM").Type() == js.TypeNumber {
-			maxDist = paramsObj.Get("maxDistanceM").Float()
-		} else if paramsObj.Get("max_dist").Type() == js.TypeNumber {
-			maxDist = paramsObj.Get("max_dist").Float()
+		if v := paramsObj.Get("max_distance_m"); v.Type() == js.TypeNumber {
+			maxDist = v.Float()
+		} else if v := paramsObj.Get("maxDistanceKm"); v.Type() == js.TypeNumber {
+			maxDist = v.Float() * 1000.0
+		} else if v := paramsObj.Get("maxDistanceM"); v.Type() == js.TypeNumber {
+			maxDist = v.Float()
+		} else if v := paramsObj.Get("max_dist"); v.Type() == js.TypeNumber {
+			maxDist = v.Float()
 		}
 	}
 
@@ -1059,7 +1532,6 @@ func jsReverseGeocode(this js.Value, args []js.Value) any {
 		MaxDistanceM: maxDist,
 	}
 
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -1069,45 +1541,35 @@ func jsReverseGeocode(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			if c == nil {
-				errObj := js.Global().Get("Error").New("failed to initialize NIPOST client")
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New("failed to initialize NIPOST client"))
 				return
 			}
 			resp, err := c.Reverse(context.Background(), params)
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
-			resolve.Invoke(toJS(resp))
+			resolve.Invoke(reverseResponseToJS(resp))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsGetAgentTools(this js.Value, args []js.Value) any {
+	initStaticCatalogs()
 	format := "openai"
 	if len(args) > 0 && args[0].Type() == js.TypeString {
 		format = args[0].String()
 	}
-	tools := postcode.DefaultAgentTools()
-	var out []any
 	switch format {
 	case "anthropic":
-		for _, t := range tools {
-			out = append(out, t.AnthropicTool())
-		}
+		return cachedAnthroTools
 	case "gemini":
-		for _, t := range tools {
-			out = append(out, t.GeminiFunctionDeclaration())
-		}
+		return cachedGeminiTools
 	default:
-		for _, t := range tools {
-			out = append(out, t.OpenAITool())
-		}
+		return cachedOpenAITools
 	}
-	return toJS(out)
 }
 
 func jsExecuteTool(this js.Value, args []js.Value) any {
@@ -1115,20 +1577,22 @@ func jsExecuteTool(this js.Value, args []js.Value) any {
 		return jsPromiseReject("tool name parameter is required")
 	}
 	name := args[0].String()
-	var argsJSON []byte
+	var jsArgsObj js.Value
+	var rawArgsJSON string
+	hasDirectObj := false
+
 	if len(args) > 1 {
-		if args[1].Type() == js.TypeString {
-			argsJSON = []byte(args[1].String())
-		} else if args[1].Type() == js.TypeObject {
-			jsonStr := js.Global().Get("JSON").Call("stringify", args[1]).String()
-			argsJSON = []byte(jsonStr)
+		if args[1].Type() == js.TypeObject {
+			jsArgsObj = args[1]
+			hasDirectObj = true
+		} else if args[1].Type() == js.TypeString {
+			rawArgsJSON = args[1].String()
 		}
 	}
-	if len(argsJSON) == 0 {
-		argsJSON = []byte("{}")
+	if !hasDirectObj && rawArgsJSON == "" {
+		rawArgsJSON = "{}"
 	}
 
-	promiseConstructor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -1138,50 +1602,54 @@ func jsExecuteTool(this js.Value, args []js.Value) any {
 			defer handler.Release()
 			c := getOrCreateClient()
 			dispatcher := postcode.NewAgentDispatcher(c)
-			res, err := dispatcher.Dispatch(context.Background(), name, argsJSON)
+			var res any
+			var err error
+			if hasDirectObj {
+				res, err = dispatcher.DispatchJSValue(context.Background(), name, jsArgsObj)
+			} else {
+				res, err = dispatcher.Dispatch(context.Background(), name, []byte(rawArgsJSON))
+			}
 			if err != nil {
-				errObj := js.Global().Get("Error").New(err.Error())
-				reject.Invoke(errObj)
+				reject.Invoke(jsError.New(err.Error()))
 				return
 			}
 			resolve.Invoke(toJS(res))
 		}()
 		return nil
 	})
-	return promiseConstructor.New(handler)
+	return jsPromise.New(handler)
 }
 
 func jsGetAgentMetrics(this js.Value, args []js.Value) any {
 	c := getOrCreateClient()
 	if c == nil {
-		return toJS(postcode.AgentGuardMetrics{})
+		return agentMetricsToJS(postcode.AgentGuardMetrics{})
 	}
-	return toJS(c.AgentMetrics())
+	return agentMetricsToJS(c.AgentMetrics())
 }
 
 func jsGenerateSyntheticAddresses(this js.Value, args []js.Value) any {
 	opts := postcode.GeneratorOptions{Count: 10, NoiseRate: 0.3}
 	if len(args) > 0 && args[0].Type() == js.TypeObject {
 		obj := args[0]
-		if obj.Get("count").Type() == js.TypeNumber {
-			opts.Count = obj.Get("count").Int()
+		if v := obj.Get("count"); v.Type() == js.TypeNumber {
+			opts.Count = v.Int()
 		}
-		if obj.Get("noiseRate").Type() == js.TypeNumber {
-			opts.NoiseRate = obj.Get("noiseRate").Float()
-		} else if obj.Get("noise_rate").Type() == js.TypeNumber {
-			opts.NoiseRate = obj.Get("noise_rate").Float()
+		if v := obj.Get("noiseRate"); v.Type() == js.TypeNumber {
+			opts.NoiseRate = v.Float()
+		} else if v := obj.Get("noise_rate"); v.Type() == js.TypeNumber {
+			opts.NoiseRate = v.Float()
 		}
-		if obj.Get("seed").Type() == js.TypeNumber {
-			opts.Seed = uint64(obj.Get("seed").Int())
+		if v := obj.Get("seed"); v.Type() == js.TypeNumber {
+			opts.Seed = uint64(v.Int())
 		}
 	}
-	addresses := postcode.GenerateSyntheticDataset(opts)
-	return toJS(addresses)
+	return syntheticAddressesToJS(postcode.GenerateSyntheticDataset(opts))
 }
 
 func jsRepair(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		obj := js.Global().Get("Object").New()
+		obj := newJSObject()
 		obj.Set("repaired", false)
 		obj.Set("error", "code parameter is required")
 		return obj
@@ -1190,45 +1658,45 @@ func jsRepair(this js.Value, args []js.Value) any {
 	p, ok := postcode.TryRepair(raw)
 	if !ok {
 		report := postcode.Diagnose(raw)
-		return toJS(map[string]any{
-			"repaired":       false,
-			"input":          raw,
-			"actionable_tip": report.ActionableTip,
-			"diagnoses":      report.Diagnoses,
-		})
+		obj := newJSObject()
+		obj.Set("repaired", false)
+		obj.Set("input", raw)
+		obj.Set("actionable_tip", report.ActionableTip)
+		obj.Set("diagnoses", segmentDiagnosesToJS(report.Diagnoses))
+		return obj
 	}
-	return toJS(map[string]any{
-		"repaired": true,
-		"input":    raw,
-		"postcode": p.Formatted(),
-		"display":  p.String(),
-		"compact":  p.Compact(),
-		"slug":     p.Slug(),
-	})
+	obj := newJSObject()
+	obj.Set("repaired", true)
+	obj.Set("input", raw)
+	obj.Set("postcode", p.Formatted())
+	obj.Set("display", p.String())
+	obj.Set("compact", p.Compact())
+	obj.Set("slug", p.Slug())
+	return obj
 }
 
 func jsExtractAddress(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		return toJS(postcode.AddressExtraction{Confidence: "low"})
+		return addressExtractionToJS(postcode.AddressExtraction{Confidence: "low"})
 	}
-	return toJS(postcode.ExtractAddress(args[0].String()))
+	return addressExtractionToJS(postcode.ExtractAddress(args[0].String()))
 }
 
 func jsDistanceMeters(this js.Value, args []js.Value) any {
 	if len(args) < 2 {
-		return toJS(map[string]any{
-			"valid": false,
-			"error": "two postcode arguments (codeA, codeB) are required",
-		})
+		obj := newJSObject()
+		obj.Set("valid", false)
+		obj.Set("error", "two postcode arguments (codeA, codeB) are required")
+		return obj
 	}
 	codeA := args[0].String()
 	codeB := args[1].String()
 	distM, err := postcode.DistanceMeters(codeA, codeB)
 	if err != nil {
-		return toJS(map[string]any{
-			"valid": false,
-			"error": err.Error(),
-		})
+		obj := newJSObject()
+		obj.Set("valid", false)
+		obj.Set("error", err.Error())
+		return obj
 	}
 	locA, _ := postcode.ResolveLocation(codeA)
 	locB, _ := postcode.ResolveLocation(codeB)
@@ -1240,21 +1708,21 @@ func jsDistanceMeters(this js.Value, args []js.Value) any {
 	if locB.Postcode != "" {
 		toPostcode = locB.Postcode
 	}
-	return toJS(map[string]any{
-		"valid":         true,
-		"distance_m":    distM,
-		"distance_km":   distM / 1000.0,
-		"from_postcode": fromPostcode,
-		"to_postcode":   toPostcode,
-	})
+	obj := newJSObject()
+	obj.Set("valid", true)
+	obj.Set("distance_m", distM)
+	obj.Set("distance_km", distM/1000.0)
+	obj.Set("from_postcode", fromPostcode)
+	obj.Set("to_postcode", toPostcode)
+	return obj
 }
 
 func jsGenerateQR(this js.Value, args []js.Value) any {
 	if len(args) == 0 {
-		return toJS(map[string]any{
-			"valid": false,
-			"error": "code parameter is required",
-		})
+		obj := newJSObject()
+		obj.Set("valid", false)
+		obj.Set("error", "code parameter is required")
+		return obj
 	}
 	code := args[0].String()
 	var opts postcode.QROptions
@@ -1263,89 +1731,90 @@ func jsGenerateQR(this js.Value, args []js.Value) any {
 			opts.Payload = postcode.QRPayloadType(args[1].String())
 		} else if args[1].Type() == js.TypeObject {
 			obj := args[1]
-			if obj.Get("payload").Type() == js.TypeString {
-				opts.Payload = postcode.QRPayloadType(obj.Get("payload").String())
+			if v := obj.Get("payload"); v.Type() == js.TypeString {
+				opts.Payload = postcode.QRPayloadType(v.String())
 			}
-			if obj.Get("level").Type() == js.TypeString {
-				opts.Level = postcode.QRErrorCorrectionLevel(obj.Get("level").String())
+			if v := obj.Get("level"); v.Type() == js.TypeString {
+				opts.Level = postcode.QRErrorCorrectionLevel(v.String())
 			}
-			if obj.Get("size").Type() == js.TypeNumber {
-				opts.Size = obj.Get("size").Int()
+			if v := obj.Get("size"); v.Type() == js.TypeNumber {
+				opts.Size = v.Int()
 			}
-			if obj.Get("quietZone").Type() == js.TypeNumber {
-				opts.QuietZone = obj.Get("quietZone").Int()
-			} else if obj.Get("quiet_zone").Type() == js.TypeNumber {
-				opts.QuietZone = obj.Get("quiet_zone").Int()
+			if v := obj.Get("quietZone"); v.Type() == js.TypeNumber {
+				opts.QuietZone = v.Int()
+			} else if v := obj.Get("quiet_zone"); v.Type() == js.TypeNumber {
+				opts.QuietZone = v.Int()
 			}
-			if obj.Get("foregroundColor").Type() == js.TypeString {
-				opts.ForegroundColor = obj.Get("foregroundColor").String()
-			} else if obj.Get("foreground_color").Type() == js.TypeString {
-				opts.ForegroundColor = obj.Get("foreground_color").String()
+			if v := obj.Get("foregroundColor"); v.Type() == js.TypeString {
+				opts.ForegroundColor = v.String()
+			} else if v := obj.Get("foreground_color"); v.Type() == js.TypeString {
+				opts.ForegroundColor = v.String()
 			}
-			if obj.Get("backgroundColor").Type() == js.TypeString {
-				opts.BackgroundColor = obj.Get("backgroundColor").String()
-			} else if obj.Get("background_color").Type() == js.TypeString {
-				opts.BackgroundColor = obj.Get("background_color").String()
+			if v := obj.Get("backgroundColor"); v.Type() == js.TypeString {
+				opts.BackgroundColor = v.String()
+			} else if v := obj.Get("background_color"); v.Type() == js.TypeString {
+				opts.BackgroundColor = v.String()
 			}
-			if obj.Get("includeLabel").Type() == js.TypeBoolean {
-				opts.IncludeLabel = obj.Get("includeLabel").Bool()
-			} else if obj.Get("include_label").Type() == js.TypeBoolean {
-				opts.IncludeLabel = obj.Get("include_label").Bool()
+			if v := obj.Get("includeLabel"); v.Type() == js.TypeBoolean {
+				opts.IncludeLabel = v.Bool()
+			} else if v := obj.Get("include_label"); v.Type() == js.TypeBoolean {
+				opts.IncludeLabel = v.Bool()
 			}
-			if obj.Get("title").Type() == js.TypeString {
-				opts.Title = obj.Get("title").String()
+			if v := obj.Get("title"); v.Type() == js.TypeString {
+				opts.Title = v.String()
 			}
-			if obj.Get("subtitle").Type() == js.TypeString {
-				opts.Subtitle = obj.Get("subtitle").String()
+			if v := obj.Get("subtitle"); v.Type() == js.TypeString {
+				opts.Subtitle = v.String()
 			}
-			if obj.Get("invertAscii").Type() == js.TypeBoolean {
-				opts.InvertASCII = obj.Get("invertAscii").Bool()
-			} else if obj.Get("invert_ascii").Type() == js.TypeBoolean {
-				opts.InvertASCII = obj.Get("invert_ascii").Bool()
+			if v := obj.Get("invertAscii"); v.Type() == js.TypeBoolean {
+				opts.InvertASCII = v.Bool()
+			} else if v := obj.Get("invert_ascii"); v.Type() == js.TypeBoolean {
+				opts.InvertASCII = v.Bool()
 			}
 		}
 	}
 
 	qr, err := postcode.GenerateQR(code, opts)
 	if err != nil {
-		return toJS(map[string]any{
-			"valid": false,
-			"input": code,
-			"error": err.Error(),
-		})
+		obj := newJSObject()
+		obj.Set("valid", false)
+		obj.Set("input", code)
+		obj.Set("error", err.Error())
+		return obj
 	}
 
 	dataURI, _ := qr.DataURI()
-	return toJS(map[string]any{
-		"valid":           true,
-		"postcode":        qr.Postcode,
-		"compact":         qr.Compact,
-		"state_code":      qr.StateCode,
-		"state_name":      qr.StateName,
-		"lga_code":        qr.LGACode,
-		"lga_name":        qr.LGAName,
-		"latitude":        qr.Latitude,
-		"longitude":       qr.Longitude,
-		"google_maps_url": qr.GoogleMapsURL,
-		"payload":         qr.Payload,
-		"payload_type":    qr.PayloadType,
-		"level":           qr.Level,
-		"version":         qr.Version,
-		"dimension":       qr.Dimension,
-		"include_label":   qr.IncludeLabel,
-		"svg":             qr.SVG(),
-		"matrix_svg":      qr.MatrixSVG(),
-		"label_svg":       qr.LabelSVG(),
-		"printable_html":  qr.PrintableHTML(),
-		"data_uri":        dataURI,
-		"svg_data_uri":    qr.SVGDataURI(),
-		"terminal":        qr.Terminal(),
-		"ascii":           qr.ASCII(),
-	})
+	obj := newJSObject()
+	obj.Set("valid", true)
+	obj.Set("postcode", qr.Postcode)
+	obj.Set("compact", qr.Compact)
+	obj.Set("state_code", qr.StateCode)
+	obj.Set("state_name", qr.StateName)
+	obj.Set("lga_code", qr.LGACode)
+	obj.Set("lga_name", qr.LGAName)
+	obj.Set("latitude", qr.Latitude)
+	obj.Set("longitude", qr.Longitude)
+	obj.Set("google_maps_url", qr.GoogleMapsURL)
+	obj.Set("payload", qr.Payload)
+	obj.Set("payload_type", string(qr.PayloadType))
+	obj.Set("level", string(qr.Level))
+	obj.Set("version", qr.Version)
+	obj.Set("dimension", qr.Dimension)
+	obj.Set("include_label", qr.IncludeLabel)
+	obj.Set("svg", qr.SVG())
+	obj.Set("matrix_svg", qr.MatrixSVG())
+	obj.Set("label_svg", qr.LabelSVG())
+	obj.Set("printable_html", qr.PrintableHTML())
+	obj.Set("data_uri", dataURI)
+	obj.Set("svg_data_uri", qr.SVGDataURI())
+	obj.Set("terminal", qr.Terminal())
+	obj.Set("ascii", qr.ASCII())
+	return obj
 }
 
 func main() {
-	postcodeObj := js.Global().Get("Object").New()
+	initJSGlobals()
+	postcodeObj := newJSObject()
 
 	// 1. Core Offline (Sync)
 	postcodeObj.Set("validate", js.FuncOf(jsValidate))
@@ -1372,6 +1841,7 @@ func main() {
 	postcodeObj.Set("stateLGAs", js.FuncOf(jsReferenceLGAsOffline))
 	postcodeObj.Set("searchNearbyBuildingsOffline", js.FuncOf(jsSearchNearbyBuildingsOffline))
 	postcodeObj.Set("reverseCoordinatesOffline", js.FuncOf(jsReverseCoordinatesOffline))
+	postcodeObj.Set("nearestLGA", js.FuncOf(jsNearestLGA))
 
 	// 2. Configuration & State (Sync)
 	postcodeObj.Set("setAPIKey", js.FuncOf(jsSetAPIKey))
@@ -1402,7 +1872,7 @@ func main() {
 	// 5. Synthetic Address Generator & Evaluation Benchmark
 	postcodeObj.Set("generateSyntheticAddresses", js.FuncOf(jsGenerateSyntheticAddresses))
 
-	js.Global().Set("Postcode", postcodeObj)
+	jsGlobal.Set("Postcode", postcodeObj)
 
 	// Keep WebAssembly event loop running
 	<-make(chan struct{})

@@ -5,10 +5,13 @@ on:
     branches: [ main ]
     tags:
       - 'v*'
+      - 'address-input/v*'
+      - 'packages/address-input/v*'
     paths: 
       - 'cmd/postcode/**'
       - '*.go'
       - 'wasm/**'
+      - 'packages/address-input/**'
       - 'go.mod'
       - 'go.sum'
       - 'go.work'
@@ -20,6 +23,7 @@ on:
       - 'cmd/postcode/**'
       - '*.go'
       - 'wasm/**'
+      - 'packages/address-input/**'
       - 'go.mod'
       - 'go.sum'
       - 'go.work'
@@ -64,7 +68,9 @@ jobs:
 
       - name: Compile WebAssembly Target
         run: |
-          GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
+          sudo apt-get update && sudo apt-get install -y binaryen
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int wasm/postcode.wasm -o wasm/postcode.wasm
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -86,6 +92,14 @@ jobs:
 
       - name: Run WebAssembly Test Script
         run: node wasm/test.js
+
+      - name: Test & Build Address Input Web Component
+        working-directory: packages/address-input
+        run: |
+          npm ci || npm install
+          npm test
+          npm run build
+
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v7
@@ -260,8 +274,10 @@ jobs:
 
       - name: Build WebAssembly Release Distribution
         run: |
+          sudo apt-get update && sudo apt-get install -y binaryen
           mkdir -p release-assets/wasm release-assets/dist
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o release-assets/wasm/postcode.wasm ./wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int release-assets/wasm/postcode.wasm -o release-assets/wasm/postcode.wasm
           cp wasm/wasm_exec.js wasm/index.js release-assets/wasm/
           tar -czvf "release-assets/dist/postcode-wasm.tar.gz" -C release-assets/wasm postcode.wasm wasm_exec.js index.js
 
@@ -343,7 +359,9 @@ jobs:
       - name: Build WebAssembly Binary
         working-directory: wasm
         run: |
+          sudo apt-get update && sudo apt-get install -y binaryen
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o postcode.wasm .
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int postcode.wasm -o postcode.wasm
           cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm_exec.js
 
       - name: Synchronize package.json Version
@@ -368,5 +386,98 @@ jobs:
           else
             echo "::warning::Neither NPM_TOKEN nor OIDC available. Skipping npm stage publish."
           fi
+
+  publish-address-input-npm:
+    name: Stage Package on npm (@abcubed3/nipost-address-input)
+    needs: [test-and-lint, smoke-test]
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/address-input/v') || startsWith(github.ref, 'refs/tags/packages/address-input/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.work'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure npm 11.15.0+ (Required for Staged Publishing)
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: Extract Release Version from Tag
+        id: version
+        run: |
+          REF_TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$REF_TAG" =~ ^(address-input/|packages/address-input/)?v?([0-9]+\.[0-9]+\.[0-9]+.*)$ ]]; then
+            VERSION="${BASH_REMATCH[2]}"
+            echo "val=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Staging version: ${VERSION}"
+          else
+            CURRENT_VER=$(node -p "require('./packages/address-input/package.json').version")
+            echo "val=${CURRENT_VER}" >> $GITHUB_OUTPUT
+            echo "Staging version: ${CURRENT_VER}"
+          fi
+
+      - name: Build WebAssembly Binary
+        working-directory: wasm
+        run: |
+          sudo apt-get update && sudo apt-get install -y binaryen
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o postcode.wasm .
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int postcode.wasm -o postcode.wasm
+          cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm_exec.js
+
+      - name: Stage Fresh WebAssembly in address-input package
+        run: |
+          mkdir -p packages/address-input/public
+          cp wasm/postcode.wasm packages/address-input/public/
+          cp wasm/wasm_exec.js packages/address-input/public/
+
+      - name: Install Dependencies
+        working-directory: packages/address-input
+        run: npm ci || npm install
+
+      - name: Run Component Unit Tests
+        working-directory: packages/address-input
+        run: npm test
+
+      - name: Build Distribution Bundles (ESM, CJS, Standalone)
+        working-directory: packages/address-input
+        run: npm run build
+
+      - name: Synchronize package.json Version
+        working-directory: packages/address-input
+        run: |
+          npm version "${{ steps.version.outputs.val }}" --no-git-tag-version --allow-same-version
+
+      - name: Stage Package on npm Registry (Staged Publishing)
+        working-directory: packages/address-input
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Submitting @abcubed3/nipost-address-input to npm staging area via 'npm publish'..."
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL}" ]; then
+            npm publish --access public --provenance || {
+              echo "::warning::npm publish via OIDC failed. If using an auth token, ensure NPM_TOKEN secret is configured."
+            }
+          elif [ -n "$NODE_AUTH_TOKEN" ]; then
+            npm stage publish --access public --provenance || npm publish --access public --provenance
+            echo "::notice::Package successfully published on npm! Maintainer approval with 2FA required on npmjs.com or via 'npm stage approve <stage-id>'."
+            echo "::notice::Package published on npm via Trusted Publishing! Approve with 2FA on npmjs.com or via 'npm stage approve <stage-id>'."
+          else
+            echo "::warning::Neither NPM_TOKEN nor OIDC available. Skipping npm stage publish."
+          fi
+
 
 

@@ -2,7 +2,6 @@ package postcode
 
 import (
 	"bytes"
-	"database/sql/driver"
 	"encoding"
 	"errors"
 	"fmt"
@@ -20,7 +19,6 @@ var (
 	_ encoding.TextAppender    = Postcode{}
 	_ encoding.TextMarshaler   = Postcode{}
 	_ encoding.TextUnmarshaler = (*Postcode)(nil)
-	_ driver.Valuer            = Postcode{}
 )
 
 // Postcode represents an immutable, validated 11-byte Nigerian postcode.
@@ -349,14 +347,6 @@ func (p Postcode) Equal(other Postcode) bool {
 // Suitable for use with slices.SortFunc.
 func (p Postcode) Compare(other Postcode) int {
 	return bytes.Compare(p.raw[:], other.raw[:])
-}
-
-// Value implements driver.Valuer, storing the canonical hyphenated postcode (or nil if zero).
-func (p Postcode) Value() (driver.Value, error) {
-	if p.IsZero() {
-		return nil, nil
-	}
-	return p.Formatted(), nil
 }
 
 // Scan implements sql.Scanner, accepting string, []byte, or nil database values.

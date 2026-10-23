@@ -1,3 +1,5 @@
+//go:build !js
+
 package postcode
 
 import (
@@ -6,16 +8,6 @@ import (
 	"strconv"
 	"time"
 )
-
-// RateLimitInfo contains the rate-limiting quotas returned by the NIPOST API gateway
-// as documented in https://docs.postcode.gov.ng/authentication.
-type RateLimitInfo struct {
-	Limit         int           // Maximum requests allowed in current window (from X-RateLimit-Limit)
-	Remaining     int           // Remaining requests in current window (from X-RateLimit-Remaining)
-	CreditBalance int           // Remaining commercial credit balance, or -1 if header not present (from X-Credit-Balance)
-	ResetAt       time.Time     // Timestamp when quota resets (from X-RateLimit-Reset or Retry-After)
-	RetryAfter    time.Duration // Cooldown duration requested by server (from Retry-After or X-RateLimit-Reset)
-}
 
 // ParseRateLimitInfo extracts rate limit quotas and cooldown durations from HTTP response headers.
 func ParseRateLimitInfo(h http.Header) *RateLimitInfo {
@@ -82,15 +74,6 @@ func ParseRateLimitInfo(h http.Header) *RateLimitInfo {
 	}
 
 	return info
-}
-
-// RetryConfig configures backoff, jitter, and rate-limit handling for HTTP requests.
-type RetryConfig struct {
-	MaxRetries        int           // Maximum retry attempts for transient errors (default: 3)
-	BaseDelay         time.Duration // Initial exponential backoff delay (default: 100ms)
-	MaxDelay          time.Duration // Maximum exponential backoff delay (default: 2s)
-	DisableRateLimit  bool          // If true, 429 Too Many Requests will not be retried automatically
-	MaxRateLimitDelay time.Duration // Maximum sleep duration client will wait for a 429 cooldown (default: 10s)
 }
 
 type RetryTransport struct {
