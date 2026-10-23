@@ -135,7 +135,7 @@ tasks:
         WASM_OPT=$(command -v wasm-opt 2>/dev/null || ([ -x /opt/homebrew/bin/wasm-opt ] && echo /opt/homebrew/bin/wasm-opt) || true)
         if [ -n "$WASM_OPT" ]; then
           echo "==> Optimizing WebAssembly binary with wasm-opt -Oz..."
-          "$WASM_OPT" -Oz --enable-bulk-memory --enable-nontrapping-float-to-int {{.WASM_OUT}} -o {{.WASM_OUT}}
+          "$WASM_OPT" -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals {{.WASM_OUT}} -o {{.WASM_OUT}}
         fi
       - cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm/wasm_exec.js 2>/dev/null || true
       - echo "==> WebAssembly binary compiled at {{.WASM_OUT}}"

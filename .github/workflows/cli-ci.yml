@@ -70,7 +70,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y binaryen
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o wasm/postcode.wasm ./wasm
-          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int wasm/postcode.wasm -o wasm/postcode.wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals wasm/postcode.wasm -o wasm/postcode.wasm
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -277,7 +277,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y binaryen
           mkdir -p release-assets/wasm release-assets/dist
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o release-assets/wasm/postcode.wasm ./wasm
-          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int release-assets/wasm/postcode.wasm -o release-assets/wasm/postcode.wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals release-assets/wasm/postcode.wasm -o release-assets/wasm/postcode.wasm
           cp wasm/wasm_exec.js wasm/index.js release-assets/wasm/
           tar -czvf "release-assets/dist/postcode-wasm.tar.gz" -C release-assets/wasm postcode.wasm wasm_exec.js index.js
 
@@ -361,7 +361,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y binaryen
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o postcode.wasm .
-          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int postcode.wasm -o postcode.wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals postcode.wasm -o postcode.wasm
           cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm_exec.js
 
       - name: Synchronize package.json Version
@@ -435,7 +435,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y binaryen
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o postcode.wasm .
-          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int postcode.wasm -o postcode.wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals postcode.wasm -o postcode.wasm
           cp $(go env GOROOT)/lib/wasm/wasm_exec.js ./wasm_exec.js
 
       - name: Stage Fresh WebAssembly in address-input package
