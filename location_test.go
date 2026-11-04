@@ -561,6 +561,16 @@ func BenchmarkResolveLocation(b *testing.B) {
 	}
 }
 
+func TestPostcodeLocation_ZeroAllocs(t *testing.T) {
+	p := postcode.MustParse("EK-01-A03-FK-01")
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = p.Location()
+	})
+	if allocs != 0 {
+		t.Errorf("p.Location() allocated %.1f times per run, want 0", allocs)
+	}
+}
+
 func BenchmarkGoogleMapsURL(b *testing.B) {
 	p, _ := postcode.Parse("EK-01-A03-FK-01")
 	b.ReportAllocs()

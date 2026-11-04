@@ -15,6 +15,21 @@ var (
 	ErrTemporaryCode = errors.New("postcode: temporary NIPOST code (TP-...) pending survey; resolve via gateway lookup")
 )
 
+type formatError string
+
+func (e formatError) Error() string { return string(e) }
+func (e formatError) Unwrap() error { return ErrInvalidFormat }
+
+const (
+	errInvalidStateFormat    = formatError("postcode: invalid format structure: state must be 2 letters")
+	errInvalidLGAFormat      = formatError("postcode: invalid format structure: LGA must be 2 digits")
+	errZeroLGA               = formatError("postcode: invalid format structure: LGA cannot be 00 (valid range 01-99)")
+	errInvalidDistrictFormat = formatError("postcode: invalid format structure: district must be 3 alphanumeric characters")
+	errInvalidAreaFormat     = formatError("postcode: invalid format structure: area must be 2 letters")
+	errInvalidUnitFormat     = formatError("postcode: invalid format structure: building unit must be 2 digits")
+	errZeroUnit              = formatError("postcode: invalid format structure: building unit cannot be 00 (valid range 01-99)")
+)
+
 var (
 	_ encoding.TextAppender    = Postcode{}
 	_ encoding.TextMarshaler   = Postcode{}
@@ -60,26 +75,26 @@ func Parse(raw string) (Postcode, error) {
 
 	// Grammar: State(2A) LGA(2D) District(3AN) Area(2A) Unit(2D)
 	if !isAlpha(p.raw[0]) || !isAlpha(p.raw[1]) {
-		return Postcode{}, fmt.Errorf("%w: state must be 2 letters", ErrInvalidFormat)
+		return Postcode{}, errInvalidStateFormat
 	}
 	if !isDigit(p.raw[2]) || !isDigit(p.raw[3]) {
-		return Postcode{}, fmt.Errorf("%w: LGA must be 2 digits", ErrInvalidFormat)
+		return Postcode{}, errInvalidLGAFormat
 	}
 	// Per NIPOST spec: numeric segments range 01-99 (never 00)
 	if p.raw[2] == '0' && p.raw[3] == '0' {
-		return Postcode{}, fmt.Errorf("%w: LGA cannot be 00 (valid range 01-99)", ErrInvalidFormat)
+		return Postcode{}, errZeroLGA
 	}
 	if !isAlnum(p.raw[4]) || !isAlnum(p.raw[5]) || !isAlnum(p.raw[6]) {
-		return Postcode{}, fmt.Errorf("%w: district must be 3 alphanumeric characters", ErrInvalidFormat)
+		return Postcode{}, errInvalidDistrictFormat
 	}
 	if !isAlpha(p.raw[7]) || !isAlpha(p.raw[8]) {
-		return Postcode{}, fmt.Errorf("%w: area must be 2 letters", ErrInvalidFormat)
+		return Postcode{}, errInvalidAreaFormat
 	}
 	if !isDigit(p.raw[9]) || !isDigit(p.raw[10]) {
-		return Postcode{}, fmt.Errorf("%w: building unit must be 2 digits", ErrInvalidFormat)
+		return Postcode{}, errInvalidUnitFormat
 	}
 	if p.raw[9] == '0' && p.raw[10] == '0' {
-		return Postcode{}, fmt.Errorf("%w: building unit cannot be 00 (valid range 01-99)", ErrInvalidFormat)
+		return Postcode{}, errZeroUnit
 	}
 
 	return p, nil
@@ -105,7 +120,7 @@ func Validate(raw string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := NigerianStates[p.State()]; !ok {
+	if _, ok := NigerianStates[string(p.raw[0:2])]; !ok {
 		return fmt.Errorf("%w: unknown state code %q (not in 36 States + FCT)", ErrInvalidFormat, p.State())
 	}
 	return nil
@@ -224,12 +239,13 @@ func (p Postcode) Segments() Segments {
 	if p.IsZero() {
 		return Segments{}
 	}
+	raw := string(p.raw[:])
 	return Segments{
-		State:    p.State(),
-		LGA:      p.LGA(),
-		District: p.District(),
-		Area:     p.Area(),
-		Unit:     p.BuildingUnit(),
+		State:    raw[0:2],
+		LGA:      raw[2:4],
+		District: raw[4:7],
+		Area:     raw[7:9],
+		Unit:     raw[9:11],
 	}
 }
 
@@ -412,8 +428,9 @@ func (p Postcode) String() string {
 	if p.IsZero() {
 		return ""
 	}
-	buf, _ := p.AppendText(make([]byte, 0, 15))
-	return string(buf)
+	var b [15]byte
+	_, _ = p.AppendText(b[:0])
+	return string(b[:])
 }
 
 // ParseSeq streams parsed postcodes as (Postcode, error) pairs using Go iterators.

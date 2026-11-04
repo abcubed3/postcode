@@ -230,6 +230,40 @@ func BenchmarkParse(b *testing.B) {
 	}
 }
 
+func BenchmarkParseInvalid(b *testing.B) {
+	const raw = "EK 00 A03 FK 01"
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		_, _ = Parse(raw)
+	}
+}
+
+func TestParse_ZeroAllocs(t *testing.T) {
+	inputs := []string{
+		"EK 01 A03 FK 01",
+		"",
+		"TP-01-A01-01",
+		"12 01 A03 FK 01",
+		"EK AB A03 FK 01",
+		"EK 00 A03 FK 01",
+		"EK 01 103 FK 01",
+		"EK 01 AXX FK 01",
+		"EK 01 A03 12 01",
+		"EK 01 A03 FK AB",
+		"EK 01 A03 FK 00",
+	}
+	for _, in := range inputs {
+		allocs := testing.AllocsPerRun(100, func() {
+			_, _ = Parse(in)
+		})
+		if allocs != 0 {
+			t.Errorf("Parse(%q) allocated %.1f times per run, want 0", in, allocs)
+		}
+	}
+}
+
 func BenchmarkFormatted(b *testing.B) {
 	p, _ := Parse("EK 01 A03 FK 01")
 	b.ReportAllocs()

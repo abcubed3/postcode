@@ -116,25 +116,34 @@ func (l Location) IsZero() bool {
 	return l == Location{}
 }
 
+func formatCoordsURL(prefix string, lat, lng float64) string {
+	var buf [96]byte
+	b := append(buf[:0], prefix...)
+	b = strconv.AppendFloat(b, lat, 'f', 6, 64)
+	b = append(b, ',')
+	b = strconv.AppendFloat(b, lng, 'f', 6, 64)
+	return string(b)
+}
+
 // GoogleMapsURL returns a standard, universal Google Maps search URL with exact coordinates
 // when Precision is Building, or a rich search query for coarse (LGA/State) locations.
 // Format: https://www.google.com/maps/search/?api=1&query=...
 func (l Location) GoogleMapsURL() string {
 	if l.Precision == PrecisionBuilding && (l.Latitude != 0 || l.Longitude != 0) {
-		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", l.Latitude, l.Longitude)
+		return formatCoordsURL("https://www.google.com/maps/search/?api=1&query=", l.Latitude, l.Longitude)
 	}
 	if l.Latitude != 0 || l.Longitude != 0 {
 		query := l.SearchQuery()
 		if query != "" && query != "Nigeria" {
-			return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(query))
+			return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(query)
 		}
-		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", l.Latitude, l.Longitude)
+		return formatCoordsURL("https://www.google.com/maps/search/?api=1&query=", l.Latitude, l.Longitude)
 	}
 	if l.Address != "" {
-		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(l.Address))
+		return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(l.Address)
 	}
 	if l.StateName != "" {
-		return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", url.QueryEscape(l.SearchQuery()))
+		return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(l.SearchQuery())
 	}
 	return ""
 }
@@ -144,14 +153,14 @@ func (l Location) GoogleMapsURL() string {
 func (l Location) GoogleMapsDirectionsURL() string {
 	if l.Latitude == 0 && l.Longitude == 0 {
 		if l.Address != "" {
-			return fmt.Sprintf("https://www.google.com/maps/dir/?api=1&destination=%s", url.QueryEscape(l.Address))
+			return "https://www.google.com/maps/dir/?api=1&destination=" + url.QueryEscape(l.Address)
 		}
 		if l.StateName != "" {
-			return fmt.Sprintf("https://www.google.com/maps/dir/?api=1&destination=%s", url.QueryEscape(l.SearchQuery()))
+			return "https://www.google.com/maps/dir/?api=1&destination=" + url.QueryEscape(l.SearchQuery())
 		}
 		return ""
 	}
-	return fmt.Sprintf("https://www.google.com/maps/dir/?api=1&destination=%.6f,%.6f", l.Latitude, l.Longitude)
+	return formatCoordsURL("https://www.google.com/maps/dir/?api=1&destination=", l.Latitude, l.Longitude)
 }
 
 // AppleMapsURL returns an Apple Maps URL for iOS/macOS devices.

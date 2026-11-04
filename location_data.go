@@ -29,6 +29,7 @@ type LGARecord struct {
 // BuildingRecord holds high-precision point geometry for a specific building unit.
 type BuildingRecord struct {
 	Postcode  string // Canonical (e.g. "EK-01-A03-FK-01") or Compact ("EK01A03FK01")
+	compact   string // Precomputed compact 11-char code for zero-alloc resolution
 	Latitude  float64
 	Longitude float64
 	Address   string
@@ -1261,10 +1262,19 @@ var knownBuildings = map[string]BuildingRecord{
 	},
 }
 
+const maxCustomBuildings = 10000
+
 var (
 	customMu        sync.RWMutex
 	customBuildings = make(map[string]BuildingRecord)
 )
+
+func init() {
+	for k, rec := range knownBuildings {
+		rec.compact = k
+		knownBuildings[k] = rec
+	}
+}
 
 // RegisterKnownBuilding allows applications to register custom building units into
 // the offline geocoding cache.
@@ -1273,11 +1283,23 @@ func RegisterKnownBuilding(rec BuildingRecord) {
 	defer customMu.Unlock()
 
 	parsed, err := Parse(rec.Postcode)
+	var key string
 	if err == nil {
-		customBuildings[parsed.Raw()] = rec
+		rec.Postcode = parsed.Formatted()
+		rec.compact = parsed.Raw()
+		key = rec.compact
 	} else {
-		customBuildings[rec.Postcode] = rec
+		rec.compact = rec.Postcode
+		key = rec.Postcode
 	}
+
+	if _, exists := customBuildings[key]; !exists && len(customBuildings) >= maxCustomBuildings {
+		for k := range customBuildings {
+			delete(customBuildings, k)
+			break
+		}
+	}
+	customBuildings[key] = rec
 }
 
 // resolvePostcodeLocation implements hierarchical local geocoding:
@@ -1291,16 +1313,11 @@ func resolvePostcodeLocation(p Postcode) Location {
 
 	ensureCacheLoaded()
 
-	compact := p.Raw()
-	canonical := p.Formatted()
-	stateCode := p.State()
-	lgaCode := p.LGA()
-
-	// 1. Check built-in official building registry first
-	if bRec, hasBuilding := knownBuildings[compact]; hasBuilding {
+	// 1. Check built-in official building registry first (0 heap allocations)
+	if bRec, hasBuilding := knownBuildings[string(p.raw[:])]; hasBuilding {
 		return Location{
-			Postcode:  canonical,
-			Compact:   compact,
+			Postcode:  bRec.Postcode,
+			Compact:   bRec.compact,
 			Latitude:  bRec.Latitude,
 			Longitude: bRec.Longitude,
 			Precision: PrecisionBuilding,
@@ -1313,13 +1330,17 @@ func resolvePostcodeLocation(p Postcode) Location {
 		}
 	}
 
-	// 2. Check custom and cached buildings
+	// 2. Check custom and cached buildings (0 heap allocations on hit)
 	customMu.RLock()
-	cRec, hasCustom := customBuildings[compact]
+	cRec, hasCustom := customBuildings[string(p.raw[:])]
 	customMu.RUnlock()
 	if hasCustom {
+		compact := cRec.compact
+		if compact == "" {
+			compact = p.Raw()
+		}
 		return Location{
-			Postcode:  canonical,
+			Postcode:  cRec.Postcode,
 			Compact:   compact,
 			Latitude:  cRec.Latitude,
 			Longitude: cRec.Longitude,
@@ -1333,26 +1354,34 @@ func resolvePostcodeLocation(p Postcode) Location {
 		}
 	}
 
-	// 3. Fallback to Known LGA centroid
-	lgaKey := stateCode + lgaCode
-	if lgaRec, hasLGA := knownLGAs[lgaKey]; hasLGA {
-		stRec := NigerianStates[stateCode]
+	// Format canonical (15 bytes) and compact (11 bytes) in a single 26-byte string allocation
+	var combinedBuf [26]byte
+	p.AppendFormatted(combinedBuf[:0])
+	copy(combinedBuf[15:26], p.raw[:])
+	combined := string(combinedBuf[:])
+	canonical := combined[:15]
+	compact := combined[15:26]
+
+	// 3. Fallback to Known LGA centroid (0 extra allocations for map lookup)
+	if lgaRec, hasLGA := knownLGAs[string(p.raw[0:4])]; hasLGA {
+		stRec := NigerianStates[lgaRec.StateCode]
 		return Location{
 			Postcode:  canonical,
 			Compact:   compact,
 			Latitude:  lgaRec.Latitude,
 			Longitude: lgaRec.Longitude,
 			Precision: PrecisionLGA,
-			StateCode: stateCode,
+			StateCode: lgaRec.StateCode,
 			StateName: stRec.Name,
-			LGACode:   lgaCode,
+			LGACode:   lgaRec.LGACode,
 			LGAName:   lgaRec.Name,
 			Zone:      stRec.Zone,
 		}
 	}
 
 	// 4. Fallback to State administrative centroid
-	stRec, hasState := NigerianStates[stateCode]
+	stRec, hasState := NigerianStates[string(p.raw[0:2])]
+	lgaCode := compact[2:4]
 	if hasState {
 		return Location{
 			Postcode:  canonical,
@@ -1360,7 +1389,7 @@ func resolvePostcodeLocation(p Postcode) Location {
 			Latitude:  stRec.Latitude,
 			Longitude: stRec.Longitude,
 			Precision: PrecisionState,
-			StateCode: stateCode,
+			StateCode: stRec.Code,
 			StateName: stRec.Name,
 			LGACode:   lgaCode,
 			LGAName:   "LGA " + lgaCode,
@@ -1372,7 +1401,7 @@ func resolvePostcodeLocation(p Postcode) Location {
 	return Location{
 		Postcode:  canonical,
 		Compact:   compact,
-		StateCode: stateCode,
+		StateCode: compact[0:2],
 		LGACode:   lgaCode,
 		Precision: PrecisionState,
 	}
