@@ -12,11 +12,10 @@ import (
 
 func TestSimulator_LookupLevels(t *testing.T) {
 	t.Parallel()
-	srv := NewServer()
-	defer srv.Close()
+	handler := NewHandler()
 
 	// 1. Level 1 without API key (free public endpoint)
-	publicClient, err := postcode.NewClient(postcode.WithBaseURL(srv.URL))
+	publicClient, err := postcode.NewClient(postcode.WithHandler(handler))
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -44,7 +43,7 @@ func TestSimulator_LookupLevels(t *testing.T) {
 
 	// 3. Level 2 and Level 3 with API key
 	authClient, err := postcode.NewClient(
-		postcode.WithBaseURL(srv.URL),
+		postcode.WithHandler(handler),
 		postcode.WithAPIKey("nipost_live_test_key"),
 	)
 	if err != nil {
@@ -85,11 +84,8 @@ func TestSimulator_LookupLevels(t *testing.T) {
 
 func TestSimulator_AllTestPostcodesValid(t *testing.T) {
 	t.Parallel()
-	srv := NewServer()
-	defer srv.Close()
-
 	client, err := postcode.NewClient(
-		postcode.WithBaseURL(srv.URL),
+		postcode.WithHandler(NewHandler()),
 		postcode.WithAPIKey("nipost_live_test"),
 	)
 	if err != nil {
@@ -156,11 +152,8 @@ func TestSimulator_DynamicLoading(t *testing.T) {
 		t.Errorf("expected lat 6.6180, lng 3.3209, got %f, %f", TestPostcodes[0].Lat, TestPostcodes[0].Lng)
 	}
 
-	srv := NewServer()
-	defer srv.Close()
-
 	client, err := postcode.NewClient(
-		postcode.WithBaseURL(srv.URL),
+		postcode.WithHandler(NewHandler()),
 		postcode.WithAPIKey("test_key"),
 	)
 	if err != nil {
@@ -186,10 +179,7 @@ func TestSimulator_DynamicLoading(t *testing.T) {
 
 func TestSimulator_ReferenceAndHealthAndAssemble(t *testing.T) {
 	t.Parallel()
-	srv := NewServer()
-	defer srv.Close()
-
-	client, err := postcode.NewClient(postcode.WithBaseURL(srv.URL))
+	client, err := postcode.NewClient(postcode.WithHandler(NewHandler()))
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -253,11 +243,8 @@ func TestSimulator_ReferenceAndHealthAndAssemble(t *testing.T) {
 
 func TestSimulator_LookupLevels4And5(t *testing.T) {
 	t.Parallel()
-	srv := NewServer()
-	defer srv.Close()
-
 	authClient, err := postcode.NewClient(
-		postcode.WithBaseURL(srv.URL),
+		postcode.WithHandler(NewHandler()),
 		postcode.WithAPIKey("nipost_live_test_key"),
 	)
 	if err != nil {
@@ -288,11 +275,8 @@ func TestSimulator_LookupLevels4And5(t *testing.T) {
 
 func TestSimulator_SearchAndDisassemble(t *testing.T) {
 	t.Parallel()
-	srv := NewServer()
-	defer srv.Close()
-
 	client, err := postcode.NewClient(
-		postcode.WithBaseURL(srv.URL),
+		postcode.WithHandler(NewHandler()),
 		postcode.WithAPIKey("test_key"),
 	)
 	if err != nil {
@@ -355,5 +339,14 @@ func TestSimulator_SearchAndDisassemble(t *testing.T) {
 	}
 	if segs.State != "EK" || segs.LGA != "01" || segs.District != "A03" || segs.Area != "FK" || segs.Unit != "01" {
 		t.Errorf("unexpected disassembled segments: %+v", segs)
+	}
+
+	// 6. Temporary code lookup
+	tmpRes, err := client.Lookup(ctx, "tp_01_a01_01", postcode.Level1)
+	if err != nil {
+		t.Fatalf("Temporary code lookup failed: %v", err)
+	}
+	if !tmpRes.Temporary || tmpRes.Postcode != "TP-01-A01-01" {
+		t.Errorf("expected temporary=true and postcode='TP-01-A01-01', got %+v", tmpRes)
 	}
 }

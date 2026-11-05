@@ -3,9 +3,12 @@ package postcode
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -84,6 +87,60 @@ type LookupResponse struct {
 	PointGeometry         *PointGeometry         `json:"point_geometry,omitempty"`
 }
 
+func (r *LookupResponse) clone() *LookupResponse {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	if r.AdministrativeAddress != nil {
+		admin := *r.AdministrativeAddress
+		cp.AdministrativeAddress = &admin
+	}
+	if r.RecentHouseAddress != nil {
+		recent := *r.RecentHouseAddress
+		cp.RecentHouseAddress = &recent
+	}
+	if r.PointGeometry != nil {
+		pg := *r.PointGeometry
+		if r.PointGeometry.Coordinates != nil {
+			pg.Coordinates = slices.Clone(r.PointGeometry.Coordinates)
+		}
+		cp.PointGeometry = &pg
+	}
+	if r.OtherBuildingInfo != nil {
+		cp.OtherBuildingInfo = maps.Clone(r.OtherBuildingInfo)
+	}
+	return &cp
+}
+
+type inflightLookup struct {
+	wg  sync.WaitGroup
+	res *LookupResponse
+	err error
+}
+
+func (c *Client) checkGuard(level LookupLevel) (LookupLevel, error) {
+	if c.agentGuard == nil {
+		return level, nil
+	}
+	return c.agentGuard.checkAndRecord(level)
+}
+
+func (c *Client) lookupCached(normCode string, minLevel LookupLevel) *LookupResponse {
+	if c.cache == nil {
+		return nil
+	}
+	for lvl := minLevel; lvl <= Level5; lvl++ {
+		cacheKey := fmt.Sprintf("lookup:%s:%d", normCode, lvl)
+		if val, ok := c.cache.Get(cacheKey); ok {
+			if cached, ok := val.(*LookupResponse); ok {
+				return cached.clone()
+			}
+		}
+	}
+	return nil
+}
+
 // Lookup queries the gateway for detailed attributes of a postcode.
 // Level defaults to Level1 (free) if 0 or unspecified.
 func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*LookupResponse, error) {
@@ -103,39 +160,62 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 		normCode = FormatTemporary(code)
 	}
 
-	if c.cache != nil {
-		// Lookup levels are cumulative: any cached response at requestedLevel or higher satisfies this lookup.
-		for lvl := requestedLevel; lvl <= Level5; lvl++ {
-			cacheKey := fmt.Sprintf("lookup:%s:%d", normCode, lvl)
-			if val, ok := c.cache.Get(cacheKey); ok {
-				if cached, ok := val.(*LookupResponse); ok {
-					return cached, nil
-				}
-			}
-		}
+	if cached := c.lookupCached(normCode, requestedLevel); cached != nil {
+		return cached, nil
 	}
 
-	effectiveLevel := requestedLevel
-	if c.agentGuard != nil {
-		var err error
-		effectiveLevel, err = c.agentGuard.checkAndRecord(requestedLevel)
-		if err != nil {
-			return nil, err
+	effectiveLevel, err := c.checkGuard(requestedLevel)
+	if err != nil {
+		return nil, err
+	}
+
+	if effectiveLevel != requestedLevel {
+		if cached := c.lookupCached(normCode, effectiveLevel); cached != nil {
+			return cached, nil
 		}
 	}
 
 	effectiveCacheKey := fmt.Sprintf("lookup:%s:%d", normCode, effectiveLevel)
-	if effectiveLevel != requestedLevel && c.cache != nil {
-		for lvl := effectiveLevel; lvl <= Level5; lvl++ {
-			cacheKey := fmt.Sprintf("lookup:%s:%d", normCode, lvl)
-			if val, ok := c.cache.Get(cacheKey); ok {
-				if cached, ok := val.(*LookupResponse); ok {
-					return cached, nil
-				}
-			}
+
+	// Coalesce concurrent cache misses for the same key when caching is enabled
+	if c.cache != nil {
+		c.inflightMu.Lock()
+		if c.inflight == nil {
+			c.inflight = make(map[string]*inflightLookup)
 		}
+		if call, ok := c.inflight[effectiveCacheKey]; ok {
+			c.inflightMu.Unlock()
+			call.wg.Wait()
+			if call.err != nil {
+				return nil, call.err
+			}
+			return call.res.clone(), nil
+		}
+		call := &inflightLookup{}
+		call.wg.Add(1)
+		c.inflight[effectiveCacheKey] = call
+		c.inflightMu.Unlock()
+
+		defer func() {
+			c.inflightMu.Lock()
+			delete(c.inflight, effectiveCacheKey)
+			c.inflightMu.Unlock()
+			call.wg.Done()
+		}()
+
+		res, fetchErr := c.fetchLookup(ctx, normCode, effectiveLevel, effectiveCacheKey)
+		call.res = res
+		call.err = fetchErr
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		return res.clone(), nil
 	}
 
+	return c.fetchLookup(ctx, normCode, effectiveLevel, effectiveCacheKey)
+}
+
+func (c *Client) fetchLookup(ctx context.Context, normCode string, effectiveLevel LookupLevel, effectiveCacheKey string) (*LookupResponse, error) {
 	q := make(url.Values, 2)
 	q.Set("code", normCode)
 	if effectiveLevel > 0 {
@@ -146,14 +226,25 @@ func (c *Client) Lookup(ctx context.Context, code string, level LookupLevel) (*L
 	endpoint := []string{"v1", "lookup"}
 	if err := c.execute(ctx, "GET", endpoint, q, nil, &res); err != nil {
 		if apiErr, ok := err.(*APIError); ok && (apiErr.StatusCode == 402 || apiErr.StatusCode == 403) && effectiveLevel > Level1 && c.agentGuard != nil && c.agentGuard.cfg.AutoDowngradeToLevel1 {
-			c.agentGuard.recordDowngrade()
-			return c.Lookup(ctx, code, Level1)
+			c.agentGuard.rollbackCommercialToLevel1()
+			if cached := c.lookupCached(normCode, Level1); cached != nil {
+				return cached, nil
+			}
+			q.Set("level", "1")
+			var l1Res LookupResponse
+			if l1Err := c.execute(ctx, "GET", endpoint, q, nil, &l1Res); l1Err != nil {
+				return nil, l1Err
+			}
+			if c.cache != nil {
+				c.cache.Set(fmt.Sprintf("lookup:%s:1", normCode), l1Res.clone(), 0)
+			}
+			return &l1Res, nil
 		}
 		return nil, err
 	}
 
 	if c.cache != nil {
-		c.cache.Set(effectiveCacheKey, &res, 0)
+		c.cache.Set(effectiveCacheKey, res.clone(), 0)
 	}
 
 	return &res, nil
@@ -176,13 +267,16 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 	}
 
 	loc := p.Location()
+	alreadyKnownBuilding := loc.Precision == PrecisionBuilding && loc.Address != ""
 
-	// 1. Query gateway at available commercial tiers (L3 down to L1 if authenticated, L1 only if unauthenticated)
+	// 1. Cost-aware gateway query:
+	// ResolveLocation only consumes AdministrativeAddress and RecentHouseAddress (Level 2, 1 credit)
+	// or Level 1 (free) when unauthenticated. Never waste 2 credits on Level 3 (BuildingUseStatus).
 	var res *LookupResponse
 	var errLookup error
-	lookupTiers := []LookupLevel{Level3, Level2, Level1}
-	if c.apiKey == "" {
-		lookupTiers = []LookupLevel{Level1}
+	lookupTiers := []LookupLevel{Level1}
+	if c.apiKey != "" {
+		lookupTiers = []LookupLevel{Level2, Level1}
 	}
 	for _, lvl := range lookupTiers {
 		res, errLookup = c.Lookup(ctx, p.Formatted(), lvl)
@@ -245,8 +339,8 @@ func (c *Client) ResolveLocation(ctx context.Context, code string) (*Location, e
 		}
 	}
 
-	// 3. Cache building-level resolution locally if exact building coordinates are present
-	if loc.Precision == PrecisionBuilding {
+	// 3. Cache building-level resolution locally only when newly discovered from gateway or geocoder
+	if loc.Precision == PrecisionBuilding && !alreadyKnownBuilding {
 		RegisterKnownBuilding(BuildingRecord{
 			Postcode:  loc.Postcode,
 			Latitude:  loc.Latitude,
@@ -278,6 +372,9 @@ type AutocompleteResponse struct {
 
 // Autocomplete retrieves segment-aware suggestions for a partial postcode input (e.g. "EK 01 A").
 func (c *Client) Autocomplete(ctx context.Context, query string) (*AutocompleteResponse, error) {
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
+	}
 	q := make(url.Values, 1)
 	q.Set("q", query)
 
@@ -332,6 +429,10 @@ func (c *Client) Nearby(ctx context.Context, params NearbyParams) (*NearbyRespon
 		}
 	}
 
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
+	}
+
 	q := make(url.Values, 3)
 	q.Set("lat", strconv.FormatFloat(params.Latitude, 'f', 6, 64))
 	q.Set("lng", strconv.FormatFloat(params.Longitude, 'f', 6, 64))
@@ -377,6 +478,9 @@ type ReverseResponse struct {
 
 // Reverse resolves a geographic coordinate to the nearest active postcode unit.
 func (c *Client) Reverse(ctx context.Context, params ReverseParams) (*ReverseResponse, error) {
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
+	}
 	q := make(url.Values, 3)
 	q.Set("lat", strconv.FormatFloat(params.Latitude, 'f', 6, 64))
 	q.Set("lng", strconv.FormatFloat(params.Longitude, 'f', 6, 64))
@@ -421,6 +525,9 @@ type AssembledPostcode struct {
 // Assemble builds canonical, display, and compact postcodes from individual segments.
 // Numeric segments are zero-filled (e.g. "1" -> "01") and alpha segments are converted to uppercase.
 func (c *Client) Assemble(ctx context.Context, segs Segments) (*AssembledPostcode, error) {
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
+	}
 	normalized := NormalizeSegments(segs)
 	var res AssembledPostcode
 	endpoint := []string{"v1", "assembly", "assemble"}
@@ -433,6 +540,9 @@ func (c *Client) Assemble(ctx context.Context, segs Segments) (*AssembledPostcod
 
 // Disassemble decomposes a postcode string into its 5 structural segments.
 func (c *Client) Disassemble(ctx context.Context, code string) (*Segments, error) {
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
+	}
 	q := make(url.Values, 1)
 	q.Set("code", code)
 
@@ -516,6 +626,9 @@ type referenceAreasResponse struct {
 // ReferenceStates queries the official precomputed catalog for all 37 Nigerian states (GET /v1/reference/states).
 // This endpoint is free and consumes no credits.
 func (c *Client) ReferenceStates(ctx context.Context) ([]NamedCode, error) {
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
+	}
 	var res referenceStatesResponse
 	endpoint := []string{"v1", "reference", "states"}
 	if err := c.execute(ctx, "GET", endpoint, nil, nil, &res); err != nil {
@@ -529,6 +642,9 @@ func (c *Client) ReferenceStates(ctx context.Context) ([]NamedCode, error) {
 func (c *Client) ReferenceLGAs(ctx context.Context, state string) ([]NamedCode, error) {
 	if state == "" {
 		return nil, fmt.Errorf("postcode: state code cannot be empty")
+	}
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
 	}
 	q := make(url.Values, 1)
 	q.Set("state", strings.ToUpper(strings.TrimSpace(state)))
@@ -545,6 +661,9 @@ func (c *Client) ReferenceLGAs(ctx context.Context, state string) ([]NamedCode, 
 func (c *Client) ReferenceDistricts(ctx context.Context, state, lga string) ([]NamedCode, error) {
 	if state == "" || lga == "" {
 		return nil, fmt.Errorf("postcode: state and lga parameters are required")
+	}
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
 	}
 	lgaNorm := strings.TrimSpace(lga)
 	if len(lgaNorm) == 1 && unicode.IsDigit(rune(lgaNorm[0])) {
@@ -566,6 +685,9 @@ func (c *Client) ReferenceDistricts(ctx context.Context, state, lga string) ([]N
 func (c *Client) ReferenceAreas(ctx context.Context, state, lga, district string) ([]NamedCode, error) {
 	if state == "" || lga == "" || district == "" {
 		return nil, fmt.Errorf("postcode: state, lga, and district parameters are required")
+	}
+	if _, err := c.checkGuard(Level1); err != nil {
+		return nil, err
 	}
 	lgaNorm := strings.TrimSpace(lga)
 	if len(lgaNorm) == 1 && unicode.IsDigit(rune(lgaNorm[0])) {

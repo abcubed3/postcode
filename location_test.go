@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -380,6 +381,33 @@ func TestClient_ResolveLocation_LiveSimulator(t *testing.T) {
 	gmapsURL := loc.GoogleMapsURL()
 	if !strings.Contains(gmapsURL, "6.601800,3.351500") {
 		t.Errorf("unexpected Google Maps URL: %s", gmapsURL)
+	}
+}
+
+func TestClient_ResolveLocation_AvoidsLevel3Waste(t *testing.T) {
+	var requestedLevels []string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedLevels = append(requestedLevels, r.URL.Query().Get("level"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"postcode":"LA-11-Z99-XX-01","valid":true,"administrative_address":{"state_name":"Lagos","lga_name":"Ikeja"}}}`))
+	})
+
+	client, err := postcode.NewClient(
+		postcode.WithHandler(handler),
+		postcode.WithAPIKey("sim_test_key"),
+	)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	_, err = client.ResolveLocation(context.Background(), "LA-11-Z99-XX-01")
+	if err != nil {
+		t.Fatalf("ResolveLocation failed: %v", err)
+	}
+	for _, lvl := range requestedLevels {
+		if lvl == "3" {
+			t.Errorf("ResolveLocation should not waste 2 commercial credits on Level 3, requested levels: %v", requestedLevels)
+		}
 	}
 }
 

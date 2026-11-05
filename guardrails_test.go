@@ -175,4 +175,112 @@ func TestAgentGuardCeilings(t *testing.T) {
 			t.Fatalf("expected still 1 request to server due to cache hit, got %d", requestsReceived)
 		}
 	})
+
+}
+
+func TestAgentGuardExtendedAndCacheIsolation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Non-Lookup Gateway Endpoints Enforced by MaxTotalCallsPerRun", func(t *testing.T) {
+		nonLookupHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"segment":"district","suggestions":[]}}`))
+		})
+
+		client, err := NewClient(
+			WithHandler(nonLookupHandler),
+			WithAgentGuard(AgentGuardConfig{
+				MaxTotalCallsPerRun: 1,
+			}),
+		)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		if _, err := client.Autocomplete(ctx, "EK 01"); err != nil {
+			t.Fatalf("first Autocomplete call should succeed: %v", err)
+		}
+		if _, err := client.Autocomplete(ctx, "EK 01 A"); err != ErrAgentBudgetExceeded {
+			t.Fatalf("second Autocomplete call should fail with ErrAgentBudgetExceeded, got %v", err)
+		}
+	})
+
+	t.Run("AutoDowngrade on 402 Does Not Double-Count TotalCalls or CommercialCalls", func(t *testing.T) {
+		downgradeHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Query().Get("level") != "1" {
+				w.WriteHeader(http.StatusPaymentRequired)
+				_, _ = w.Write([]byte(`{"error":{"code":"insufficient_credits","message":"no credits"}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":{"postcode":"EK-01-A03-FK-01","valid":true}}`))
+		})
+
+		client, err := NewClient(
+			WithHandler(downgradeHandler),
+			WithAgentGuard(AgentGuardConfig{
+				MaxTotalCallsPerRun:   1,
+				AutoDowngradeToLevel1: true,
+			}),
+		)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		res, err := client.Lookup(ctx, "EK-01-A03-FK-01", Level2)
+		if err != nil {
+			t.Fatalf("expected auto-downgraded lookup to succeed within 1 logical call budget, got %v", err)
+		}
+		if !res.Valid {
+			t.Errorf("expected res.Valid=true")
+		}
+		m := client.AgentMetrics()
+		if m.TotalCalls != 1 {
+			t.Errorf("expected TotalCalls=1, got %d", m.TotalCalls)
+		}
+		if m.CommercialCalls != 0 {
+			t.Errorf("expected CommercialCalls=0 after 402 rollback, got %d", m.CommercialCalls)
+		}
+		if m.DowngradedCalls != 1 {
+			t.Errorf("expected DowngradedCalls=1, got %d", m.DowngradedCalls)
+		}
+	})
+
+	t.Run("Cache Deep-Clone Isolation", func(t *testing.T) {
+		cloneHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"postcode":"EK-01-A03-FK-01","valid":true,"administrative_address":{"state_name":"Ekiti"},"other_building_info":{"type":"detached"},"point_geometry":{"type":"Point","coordinates":[5.2215,7.6211]}}}`))
+		})
+
+		client, err := NewClient(
+			WithHandler(cloneHandler),
+			WithDefaultCache(),
+		)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		res1, err := client.Lookup(ctx, "EK-01-A03-FK-01", Level5)
+		if err != nil {
+			t.Fatalf("first lookup failed: %v", err)
+		}
+		// Mutate returned struct fields
+		res1.AdministrativeAddress.StateName = "MUTATED"
+		res1.OtherBuildingInfo["type"] = "MUTATED"
+		res1.PointGeometry.Coordinates[0] = 999.0
+
+		res2, err := client.Lookup(ctx, "EK-01-A03-FK-01", Level5)
+		if err != nil {
+			t.Fatalf("second lookup failed: %v", err)
+		}
+		if res2.AdministrativeAddress.StateName != "Ekiti" {
+			t.Errorf("cache was corrupted by caller mutation: StateName=%q, want Ekiti", res2.AdministrativeAddress.StateName)
+		}
+		if res2.OtherBuildingInfo["type"] != "detached" {
+			t.Errorf("cache map was corrupted: type=%v, want detached", res2.OtherBuildingInfo["type"])
+		}
+		if res2.PointGeometry.Coordinates[0] != 5.2215 {
+			t.Errorf("cache coordinates were corrupted: got %v, want 5.2215", res2.PointGeometry.Coordinates[0])
+		}
+	})
 }
