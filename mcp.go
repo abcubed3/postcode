@@ -124,18 +124,12 @@ func isVersionSupported(v string) bool {
 // Serve reads JSON-RPC 2.0 messages from in, executes corresponding MCP methods,
 // and writes newline-delimited JSON-RPC responses to out.
 func (s *MCPServer) Serve(in io.Reader, out io.Writer) error {
-	reader := bufio.NewReaderSize(in, 1024*1024)
+	const maxMCPMessageBytes = 1024 * 1024 // 1MB max JSON-RPC message size
+	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxMCPMessageBytes)
 
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("mcp read error: %w", err)
-		}
-
-		trimmed := strings.TrimSpace(string(line))
+	for scanner.Scan() {
+		trimmed := strings.TrimSpace(scanner.Text())
 		if len(trimmed) == 0 {
 			continue
 		}
@@ -158,6 +152,11 @@ func (s *MCPServer) Serve(in io.Reader, out io.Writer) error {
 			return fmt.Errorf("mcp write error: %w", err)
 		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("mcp read error: %w", err)
+	}
+	return nil
 }
 
 func (s *MCPServer) handleNotification(req mcpRequest) {

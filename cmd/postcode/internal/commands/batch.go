@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abcubed3/postcode"
@@ -41,7 +43,9 @@ and migrating legacy databases.`,
 			if outputFile == "" && outAlias != "" {
 				outputFile = outAlias
 			}
-			_ = workers // reserved for concurrent gateway enrichment; offline enrichment streams sequentially
+			if workers < 1 {
+				workers = 1
+			}
 
 			r := cmd.InOrStdin()
 			if inputFile != "" && inputFile != "-" {
@@ -106,21 +110,11 @@ and migrating legacy databases.`,
 			validCount := 0
 			invalidCount := 0
 
-			for {
-				row, err := reader.Read()
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				if err != nil {
-					return fmt.Errorf("reading CSV record %d: %w", total+1, err)
-				}
-
-				total++
+			enrichRow := func(row []string) ([]string, bool) {
 				rawCode := ""
 				if colIdx < len(row) {
 					rawCode = row[colIdx]
 				}
-
 				p, parseErr := postcode.Parse(rawCode)
 				if parseErr != nil && autoRepair {
 					if repaired, ok := postcode.TryRepair(rawCode); ok {
@@ -129,19 +123,12 @@ and migrating legacy databases.`,
 					}
 				}
 				if parseErr != nil {
-					invalidCount++
-					enriched := append(row, "false", "", "", "", "", "", "", "")
-					if err := writer.Write(enriched); err != nil {
-						return err
-					}
-					continue
+					return append(row, "false", "", "", "", "", "", "", ""), false
 				}
-
-				validCount++
 				loc := p.Location()
-				latStr := fmt.Sprintf("%.6f", loc.Latitude)
-				lngStr := fmt.Sprintf("%.6f", loc.Longitude)
-				enriched := append(row,
+				latStr := strconv.FormatFloat(loc.Latitude, 'f', 6, 64)
+				lngStr := strconv.FormatFloat(loc.Longitude, 'f', 6, 64)
+				return append(row,
 					"true",
 					p.Formatted(),
 					loc.StateName,
@@ -150,11 +137,77 @@ and migrating legacy databases.`,
 					lngStr,
 					loc.Precision.String(),
 					loc.GoogleMapsURL(),
-				)
+				), true
+			}
 
-				if err := writer.Write(enriched); err != nil {
-					return err
+			const batchChunkSize = 512
+			chunk := make([][]string, 0, batchChunkSize)
+			flushChunk := func(rows [][]string) error {
+				if len(rows) == 0 {
+					return nil
 				}
+				if workers == 1 || len(rows) == 1 {
+					for _, row := range rows {
+						enriched, ok := enrichRow(row)
+						if ok {
+							validCount++
+						} else {
+							invalidCount++
+						}
+						if err := writer.Write(enriched); err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+
+				results := make([][]string, len(rows))
+				validFlags := make([]bool, len(rows))
+				var wg sync.WaitGroup
+				sem := make(chan struct{}, workers)
+				for i, rRow := range rows {
+					wg.Add(1)
+					sem <- struct{}{}
+					go func(idx int, inRow []string) {
+						defer wg.Done()
+						defer func() { <-sem }()
+						results[idx], validFlags[idx] = enrichRow(inRow)
+					}(i, rRow)
+				}
+				wg.Wait()
+
+				for i, enriched := range results {
+					if validFlags[i] {
+						validCount++
+					} else {
+						invalidCount++
+					}
+					if err := writer.Write(enriched); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+
+			for {
+				row, err := reader.Read()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return fmt.Errorf("reading CSV record %d: %w", total+1, err)
+				}
+				total++
+				chunk = append(chunk, row)
+				if len(chunk) >= batchChunkSize {
+					if err := flushChunk(chunk); err != nil {
+						return err
+					}
+					chunk = chunk[:0]
+				}
+			}
+			if err := flushChunk(chunk); err != nil {
+				return err
 			}
 
 			writer.Flush()

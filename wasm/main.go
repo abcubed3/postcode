@@ -636,8 +636,7 @@ func jsPromiseReject(msg string) js.Value {
 }
 
 func validateSingle(code string) js.Value {
-	p, err := postcode.Parse(code)
-	if err != nil {
+	if err := postcode.Validate(code); err != nil {
 		diag := postcode.Diagnose(code)
 		obj := newJSObject()
 		obj.Set("valid", false)
@@ -651,6 +650,7 @@ func validateSingle(code string) js.Value {
 		return obj
 	}
 
+	p, _ := postcode.Parse(code)
 	stateName := ""
 	if rec, ok := postcode.NigerianStates[p.State()]; ok {
 		stateName = rec.Name

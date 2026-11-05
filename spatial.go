@@ -35,12 +35,19 @@ func haversineM(lat1, lon1, lat2, lon2 float64) float64 {
 
 // SearchNearbyBuildingsOffline searches local embedded and cached buildings within radiusM meters of (lat, lng).
 func SearchNearbyBuildingsOffline(lat, lng, radiusM float64) []NearbyUnit {
-	all := AllBuildingRecords()
+	ensureCacheLoaded()
 	if radiusM <= 0 {
 		radiusM = 300.0
 	}
+	// Fast bounding-box delta in degrees (~111km per degree of latitude) to skip expensive Haversine
+	maxLatDelta := (radiusM / 110000.0) + 0.005
+	maxLngDelta := (radiusM / 100000.0) + 0.005
+
 	var results []NearbyUnit
-	for _, b := range all {
+	checkBuilding := func(b BuildingRecord) {
+		if math.Abs(b.Latitude-lat) > maxLatDelta || math.Abs(b.Longitude-lng) > maxLngDelta {
+			return
+		}
 		dist := haversineM(lat, lng, b.Latitude, b.Longitude)
 		if dist <= radiusM {
 			conf := "high"
@@ -66,6 +73,16 @@ func SearchNearbyBuildingsOffline(lat, lng, radiusM float64) []NearbyUnit {
 			})
 		}
 	}
+
+	for _, b := range knownBuildings {
+		checkBuilding(b)
+	}
+	customMu.RLock()
+	for _, b := range customBuildings {
+		checkBuilding(b)
+	}
+	customMu.RUnlock()
+
 	slices.SortFunc(results, func(a, b NearbyUnit) int {
 		return cmp.Compare(a.DistanceM, b.DistanceM)
 	})

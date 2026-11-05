@@ -1,6 +1,10 @@
 package postcode
 
-import "strings"
+import (
+	"cmp"
+	"slices"
+	"strings"
+)
 
 // AddressExtraction holds the structured entities extracted from an unstructured Nigerian address
 // using the 5-stage NIPOST address disambiguation pipeline.
@@ -134,10 +138,36 @@ var (
 	}
 )
 
+type lgaMatchEntry struct {
+	stateCode string
+	lgaCode   string
+	name      string
+	upperName string
+	prefix    string
+}
+
+var sortedLGAEntries []lgaMatchEntry
+
 func init() {
 	for i := range nigerianLocalityRules {
 		nigerianLocalityRules[i].upper = strings.ToUpper(nigerianLocalityRules[i].phrase)
 	}
+	sortedLGAEntries = make([]lgaMatchEntry, 0, len(knownLGAs))
+	for _, rec := range knownLGAs {
+		sortedLGAEntries = append(sortedLGAEntries, lgaMatchEntry{
+			stateCode: rec.StateCode,
+			lgaCode:   rec.LGACode,
+			name:      rec.Name,
+			upperName: strings.ToUpper(rec.Name),
+			prefix:    rec.StateCode + "-" + rec.LGACode,
+		})
+	}
+	slices.SortFunc(sortedLGAEntries, func(a, b lgaMatchEntry) int {
+		if len(a.upperName) != len(b.upperName) {
+			return cmp.Compare(len(b.upperName), len(a.upperName))
+		}
+		return cmp.Compare(a.prefix, b.prefix)
+	})
 }
 
 // ExtractAddress runs the 5-stage Nigerian address disambiguation pipeline on an unstructured
@@ -300,17 +330,17 @@ func ExtractAddress(raw string) AddressExtraction {
 
 	// Also check knownLGAs by name if LGA was not already set by an explicit 11-char postcode or locality rule
 	if !res.PostcodeValid && !lgaFromText {
-		for _, lgaRec := range knownLGAs {
-			if textStateCode != "" && lgaRec.StateCode != textStateCode {
+		for _, lgaRec := range sortedLGAEntries {
+			if textStateCode != "" && lgaRec.stateCode != textStateCode {
 				continue
 			}
-			if strings.Contains(upper, strings.ToUpper(lgaRec.Name)) {
-				res.LGACode = lgaRec.LGACode
-				res.LGAName = lgaRec.Name
+			if strings.Contains(upper, lgaRec.upperName) {
+				res.LGACode = lgaRec.lgaCode
+				res.LGAName = lgaRec.name
 				if textStateCode == "" {
-					textStateCode = lgaRec.StateCode
+					textStateCode = lgaRec.stateCode
 				}
-				res.SuggestedPrefix = lgaRec.StateCode + "-" + lgaRec.LGACode
+				res.SuggestedPrefix = lgaRec.prefix
 				break
 			}
 		}

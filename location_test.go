@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -383,6 +384,33 @@ func TestClient_ResolveLocation_LiveSimulator(t *testing.T) {
 	}
 }
 
+func TestClient_ResolveLocation_AvoidsLevel3Waste(t *testing.T) {
+	var requestedLevels []string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedLevels = append(requestedLevels, r.URL.Query().Get("level"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"postcode":"LA-11-Z99-XX-01","valid":true,"administrative_address":{"state_name":"Lagos","lga_name":"Ikeja"}}}`))
+	})
+
+	client, err := postcode.NewClient(
+		postcode.WithHandler(handler),
+		postcode.WithAPIKey("sim_test_key"),
+	)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	_, err = client.ResolveLocation(context.Background(), "LA-11-Z99-XX-01")
+	if err != nil {
+		t.Fatalf("ResolveLocation failed: %v", err)
+	}
+	for _, lvl := range requestedLevels {
+		if lvl == "3" {
+			t.Errorf("ResolveLocation should not waste 2 commercial credits on Level 3, requested levels: %v", requestedLevels)
+		}
+	}
+}
+
 func TestClient_ResolveLocation_FallbackOnUnauthorized(t *testing.T) {
 	// Simulator without API key causes commercial Levels 2 & 3 to return 401 Unauthorized
 	srv := httptest.NewServer(simulator.NewHandler())
@@ -558,6 +586,16 @@ func BenchmarkResolveLocation(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = postcode.ResolveLocation("EK-01-A03-FK-01")
+	}
+}
+
+func TestPostcodeLocation_ZeroAllocs(t *testing.T) {
+	p := postcode.MustParse("EK-01-A03-FK-01")
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = p.Location()
+	})
+	if allocs != 0 {
+		t.Errorf("p.Location() allocated %.1f times per run, want 0", allocs)
 	}
 }
 

@@ -11,9 +11,19 @@ import type {
 } from './types';
 import { getLGAsForState, findNearestLGA } from './data/lgas';
 
-const DEFAULT_WASM_VERSION = 'latest';
+const DEFAULT_WASM_VERSION = '0.2.5';
 const DEFAULT_WASM_CDN_URL = `https://unpkg.com/@abcubed3/postcode-wasm@${DEFAULT_WASM_VERSION}/postcode.wasm`;
 const DEFAULT_WASM_EXEC_CDN_URL = `https://unpkg.com/@abcubed3/postcode-wasm@${DEFAULT_WASM_VERSION}/wasm_exec.js`;
+
+function isSecureOrLoopbackEndpoint(urlStr: string): boolean {
+  try {
+    const u = new URL(urlStr, typeof window !== 'undefined' ? window.location.origin : 'https://api.postcode.gov.ng');
+    if (u.protocol === 'https:') return true;
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
 
 // Shared module-level singleton loader to avoid duplicate script injection and compilation across inputs
 let sharedEnginePromise: Promise<PostcodeWasmModule> | null = null;
@@ -101,6 +111,7 @@ export class NipostAddressInputElement extends HTMLElement {
       'allow-gps',
       'wasm-url',
       'wasm-exec-url',
+      'wasm-exec-integrity',
       'api-key',
       'endpoint',
       'placeholder',
@@ -185,7 +196,7 @@ export class NipostAddressInputElement extends HTMLElement {
         this._engine.setAPIKey(newValue);
       }
     } else if (name === 'endpoint') {
-      if (newValue && this._engine && typeof (this._engine as any).configure === 'function') {
+      if (newValue && isSecureOrLoopbackEndpoint(newValue) && this._engine && typeof (this._engine as any).configure === 'function') {
         (this._engine as any).configure({ baseURL: newValue });
       }
     }
@@ -332,8 +343,10 @@ export class NipostAddressInputElement extends HTMLElement {
 
     const wasmUrl = this.getAttribute('wasm-url') || DEFAULT_WASM_CDN_URL;
     const wasmExecUrl = this.getAttribute('wasm-exec-url') || DEFAULT_WASM_EXEC_CDN_URL;
+    const wasmExecIntegrity = this.getAttribute('wasm-exec-integrity');
     const apiKey = this.getAttribute('api-key');
-    const endpoint = this.getAttribute('endpoint');
+    const rawEndpoint = this.getAttribute('endpoint');
+    const endpoint = rawEndpoint && isSecureOrLoopbackEndpoint(rawEndpoint) ? rawEndpoint : null;
 
     this._isEngineLoading = true;
     this.updateLoadingState();
@@ -348,6 +361,9 @@ export class NipostAddressInputElement extends HTMLElement {
                 const script = document.createElement('script');
                 script.src = wasmExecUrl;
                 script.crossOrigin = 'anonymous';
+                if (wasmExecIntegrity) {
+                  script.integrity = wasmExecIntegrity;
+                }
                 script.onload = () => resolve();
                 script.onerror = () => reject(new Error(`Failed to load WebAssembly Go runtime from ${wasmExecUrl}`));
                 document.head.appendChild(script);
@@ -1123,13 +1139,18 @@ export class NipostAddressInputElement extends HTMLElement {
     }
 
     this.gpsBtn.disabled = true;
-    const originalText = this.gpsBtn.innerHTML;
-    this.gpsBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> <span>Locating...</span>';
+    const originalChildren = Array.from(this.gpsBtn.childNodes).map((n) => n.cloneNode(true));
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = 'Locating...';
+    this.gpsBtn.replaceChildren(spinner, document.createTextNode(' '), label);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         this.gpsBtn.disabled = false;
-        this.gpsBtn.innerHTML = originalText;
+        this.gpsBtn.replaceChildren(...originalChildren);
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
 
@@ -1215,7 +1236,7 @@ export class NipostAddressInputElement extends HTMLElement {
       },
       (err) => {
         this.gpsBtn.disabled = false;
-        this.gpsBtn.innerHTML = originalText;
+        this.gpsBtn.replaceChildren(...originalChildren);
         console.warn('Geolocation error:', err.message);
         this.dispatchEvent(
           new CustomEvent('nipost-error', {

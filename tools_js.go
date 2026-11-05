@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall/js"
 )
 
@@ -306,9 +307,120 @@ func (d *AgentDispatcher) DispatchJSValue(ctx context.Context, name string, args
 
 // DispatchString executes the tool and returns a JSON string error or result on js/wasm.
 func (d *AgentDispatcher) DispatchString(ctx context.Context, name string, argsJSON []byte) (string, error) {
-	_, err := d.Dispatch(ctx, name, argsJSON)
+	res, err := d.Dispatch(ctx, name, argsJSON)
 	if err != nil {
 		return `{"error":` + strconv.Quote(err.Error()) + `}`, err
 	}
-	return "{}", nil
+	return encodeJSJSON(res), nil
+}
+
+func encodeJSJSON(v any) string {
+	switch val := v.(type) {
+	case nil:
+		return "null"
+	case string:
+		return strconv.Quote(val)
+	case bool:
+		return strconv.FormatBool(val)
+	case int:
+		return strconv.Itoa(val)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case QRPayloadType:
+		return strconv.Quote(string(val))
+	case QRErrorCorrectionLevel:
+		return strconv.Quote(string(val))
+	case []string:
+		var sb strings.Builder
+		sb.WriteByte('[')
+		for i, s := range val {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(strconv.Quote(s))
+		}
+		sb.WriteByte(']')
+		return sb.String()
+	case map[string]any:
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var sb strings.Builder
+		sb.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(strconv.Quote(k))
+			sb.WriteByte(':')
+			sb.WriteString(encodeJSJSON(val[k]))
+		}
+		sb.WriteByte('}')
+		return sb.String()
+	case AssembledPostcode:
+		return `{"postcode":` + strconv.Quote(val.Postcode) + `,"display":` + strconv.Quote(val.Display) + `,"compact":` + strconv.Quote(val.Compact) + `}`
+	case *AssembledPostcode:
+		if val == nil {
+			return "null"
+		}
+		return encodeJSJSON(*val)
+	case Segments:
+		return `{"state":` + strconv.Quote(val.State) + `,"lga":` + strconv.Quote(val.LGA) + `,"district":` + strconv.Quote(val.District) + `,"area":` + strconv.Quote(val.Area) + `,"unit":` + strconv.Quote(val.Unit) + `}`
+	case *Segments:
+		if val == nil {
+			return "null"
+		}
+		return encodeJSJSON(*val)
+	case DiagnosticReport:
+		return encodeJSJSON(map[string]any{
+			"input":          val.Input,
+			"valid":          val.Valid,
+			"clean_length":   val.CleanLength,
+			"is_temporary":   val.IsTemporary,
+			"suggested_fix":  val.SuggestedFix,
+			"actionable_tip": val.ActionableTip,
+			"diagnoses":      val.Diagnoses,
+		})
+	case AddressExtraction:
+		return encodeJSJSON(map[string]any{
+			"raw":              val.Raw,
+			"postcode":         val.Postcode,
+			"postcode_valid":   val.PostcodeValid,
+			"legacy_postcode":  val.LegacyPostcode,
+			"suggested_prefix": val.SuggestedPrefix,
+			"state_code":       val.StateCode,
+			"state_name":       val.StateName,
+			"lga_code":         val.LGACode,
+			"lga_name":         val.LGAName,
+			"locality":         val.Locality,
+			"street":           val.Street,
+			"landmark":         val.Landmark,
+			"latitude":         val.Latitude,
+			"longitude":        val.Longitude,
+			"confidence":       val.Confidence,
+		})
+	case Location:
+		return encodeJSJSON(map[string]any{
+			"postcode":   val.Postcode,
+			"compact":    val.Compact,
+			"latitude":   val.Latitude,
+			"longitude":  val.Longitude,
+			"address":    val.Address,
+			"state_code": val.StateCode,
+			"state_name": val.StateName,
+			"lga_code":   val.LGACode,
+			"lga_name":   val.LGAName,
+			"zone":       val.Zone,
+			"precision":  val.Precision.String(),
+		})
+	case *Location:
+		if val == nil {
+			return "null"
+		}
+		return encodeJSJSON(*val)
+	default:
+		return `{"result":` + strconv.Quote(fmt.Sprintf("%v", v)) + `}`
+	}
 }

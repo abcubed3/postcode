@@ -86,7 +86,12 @@ func (g *GoogleMapsGeocoder) Geocode(ctx context.Context, query string) (float64
 
 	resp, err := g.HTTPClient.Do(req)
 	if err != nil {
-		return 0, 0, fmt.Errorf("google geocoder v4 http call failed: %w", err)
+		msg := err.Error()
+		if g.APIKey != "" {
+			msg = strings.ReplaceAll(msg, url.QueryEscape(g.APIKey), "[REDACTED]")
+			msg = strings.ReplaceAll(msg, g.APIKey, "[REDACTED]")
+		}
+		return 0, 0, fmt.Errorf("google geocoder v4 http call failed: %s", msg)
 	}
 	defer resp.Body.Close()
 
@@ -139,12 +144,17 @@ func (g *GoogleMapsGeocoder) geocodeV3(ctx context.Context, cleanQuery string) (
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return 0, 0, fmt.Errorf("google geocoder v3 request creation failed: %w", err)
+		return 0, 0, fmt.Errorf("google geocoder v3 request creation failed")
 	}
 
 	resp, err := g.HTTPClient.Do(req)
 	if err != nil {
-		return 0, 0, fmt.Errorf("google geocoder v3 http call failed: %w", err)
+		msg := err.Error()
+		if g.APIKey != "" {
+			msg = strings.ReplaceAll(msg, url.QueryEscape(g.APIKey), "[REDACTED]")
+			msg = strings.ReplaceAll(msg, g.APIKey, "[REDACTED]")
+		}
+		return 0, 0, fmt.Errorf("google geocoder v3 http call failed: %s", msg)
 	}
 	defer resp.Body.Close()
 

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall/js"
 	"time"
@@ -31,6 +32,8 @@ type Client struct {
 	cache       Cache
 	agentGuard  *agentGuardState
 	geocoder    Geocoder
+	inflightMu  sync.Mutex
+	inflight    map[string]*inflightLookup
 }
 
 // NewClient instantiates a WebAssembly HTTP client backed by browser/Node fetch().
@@ -188,6 +191,12 @@ func doJSFetch(ctx context.Context, method, fullURL string, headers map[string]s
 		opts.Set("body", body)
 	}
 
+	var abortCtrl js.Value
+	if acCtor := global.Get("AbortController"); acCtor.Type() == js.TypeFunction {
+		abortCtrl = acCtor.New()
+		opts.Set("signal", abortCtrl.Get("signal"))
+	}
+
 	type fetchResult struct {
 		resp *jsFetchResponse
 		err  error
@@ -195,8 +204,16 @@ func doJSFetch(ctx context.Context, method, fullURL string, headers map[string]s
 	ch := make(chan fetchResult, 1)
 
 	var thenFunc, catchFunc js.Func
+	var releaseOnce sync.Once
+	releaseCallbacks := func() {
+		releaseOnce.Do(func() {
+			thenFunc.Release()
+			catchFunc.Release()
+		})
+	}
+
 	thenFunc = js.FuncOf(func(this js.Value, args []js.Value) any {
-		defer thenFunc.Release()
+		defer releaseCallbacks()
 		respVal := args[0]
 		statusCode := respVal.Get("status").Int()
 		statusText := ""
@@ -249,8 +266,7 @@ func doJSFetch(ctx context.Context, method, fullURL string, headers map[string]s
 	})
 
 	catchFunc = js.FuncOf(func(this js.Value, args []js.Value) any {
-		defer catchFunc.Release()
-		defer thenFunc.Release()
+		defer releaseCallbacks()
 		msg := "fetch error"
 		if len(args) > 0 {
 			msg = args[0].Call("toString").String()
@@ -265,6 +281,10 @@ func doJSFetch(ctx context.Context, method, fullURL string, headers map[string]s
 	case res := <-ch:
 		return res.resp, res.err
 	case <-ctx.Done():
+		if abortCtrl.Type() == js.TypeObject && abortCtrl.Get("abort").Type() == js.TypeFunction {
+			abortCtrl.Call("abort")
+		}
+		releaseCallbacks()
 		return nil, ctx.Err()
 	}
 }
@@ -358,7 +378,24 @@ func jsBoolField(obj js.Value, key string) bool {
 	return false
 }
 
+func isSecureOrLoopbackURL(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	if u.Scheme == "https" {
+		return true
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
 func (c *Client) execute(ctx context.Context, method string, pathParts []string, q url.Values, reqBody any, dst any) error {
+	if c.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+	}
+
 	u := c.baseURL.JoinPath(pathParts...)
 	if len(q) > 0 {
 		u.RawQuery = q.Encode()
@@ -383,6 +420,11 @@ func (c *Client) execute(ctx context.Context, method string, pathParts []string,
 		}
 	}
 	if c.apiKey != "" {
+		if !isSecureOrLoopbackURL(u) {
+			err := fmt.Errorf("postcode: refusing to transmit X-API-Key over insecure %s:// to non-loopback host %s", u.Scheme, u.Hostname())
+			span.RecordError(err)
+			return err
+		}
 		headers["X-API-Key"] = c.apiKey
 	}
 

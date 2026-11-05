@@ -4,6 +4,7 @@ import (
 	"cmp"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -268,6 +269,16 @@ func handleLookup(w http.ResponseWriter, r *http.Request) {
 
 	p, err := postcode.Parse(code)
 	if err != nil {
+		if errors.Is(err, postcode.ErrTemporaryCode) || postcode.IsTemporary(code) {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"data": map[string]any{
+					"postcode":  postcode.FormatTemporary(code),
+					"valid":     false,
+					"temporary": true,
+				},
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"postcode": code,
@@ -530,6 +541,7 @@ func handleReverse(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAssemble(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 	var segs postcode.Segments
 	if err := json.NewDecoder(r.Body).Decode(&segs); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body")

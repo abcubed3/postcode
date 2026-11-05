@@ -109,9 +109,11 @@ func RedactPII(raw string) RedactedAddress {
 					stateCode = p.State()
 					lgaCode = p.LGA()
 				}
-				out = strings.ReplaceAll(out, cand, masked)
-				count++
-				addType("building_unit")
+				if occ := strings.Count(out, cand); occ > 0 {
+					out = strings.ReplaceAll(out, cand, masked)
+					count += occ
+					addType("building_unit")
+				}
 			}
 		}
 	}
@@ -220,7 +222,19 @@ func matchNigerianPhoneAt(s string, start int) (int, bool) {
 		return 0, false
 	}
 	p := start
-	if p < n && s[p] == '+' {
+	if p < n && s[p] == '(' {
+		p++
+		if p < n && s[p] == '+' {
+			p++
+		}
+		if p+4 > n || s[p:p+3] != "234" || s[p+3] != ')' {
+			return 0, false
+		}
+		p += 4
+		if p < n && (s[p] == ' ' || s[p] == '-') {
+			p++
+		}
+	} else if p < n && s[p] == '+' {
 		p++
 		if p+3 > n || s[p:p+3] != "234" {
 			return 0, false
@@ -277,20 +291,11 @@ func redactElevenDigitNumbers(s string) (string, int) {
 	i := 0
 	n := len(s)
 	for i < n {
-		if i+11 <= n && (i == 0 || !isWordChar(s[i-1])) && (i+11 == n || !isWordChar(s[i+11])) {
-			allDigits := true
-			for j := 0; j < 11; j++ {
-				if !isASCIIDigit(s[i+j]) {
-					allDigits = false
-					break
-				}
-			}
-			if allDigits {
-				sb.WriteString("[REDACTED_NIN_BVN]")
-				count++
-				i += 11
-				continue
-			}
+		if end, ok := matchElevenDigitNINAt(s, i); ok {
+			sb.WriteString("[REDACTED_NIN_BVN]")
+			count++
+			i = end
+			continue
 		}
 		sb.WriteByte(s[i])
 		i++
@@ -301,12 +306,40 @@ func redactElevenDigitNumbers(s string) (string, int) {
 	return sb.String(), count
 }
 
+func matchElevenDigitNINAt(s string, start int) (int, bool) {
+	n := len(s)
+	if start > 0 && isWordChar(s[start-1]) {
+		return 0, false
+	}
+	if start >= n || !isASCIIDigit(s[start]) {
+		return 0, false
+	}
+	digits := 0
+	p := start
+	for p < n && digits < 11 {
+		if isASCIIDigit(s[p]) {
+			digits++
+			p++
+		} else if (s[p] == ' ' || s[p] == '-') && digits > 0 && p+1 < n && isASCIIDigit(s[p+1]) {
+			p++
+		} else {
+			return 0, false
+		}
+	}
+	if digits != 11 {
+		return 0, false
+	}
+	if p < n && isWordChar(s[p]) {
+		return 0, false
+	}
+	return p, true
+}
+
 func isDigitOrOI(b byte) bool {
 	return isASCIIDigit(b) || b == 'O' || b == 'o' || b == 'I' || b == 'i'
 }
 
-// findPostcodeCandidates matches embedded 5-segment NIPOST postcode candidates:
-// (?i)\b[A-Z]{2,3}[\-\s][0-9OI]{1,2}[\-\s][A-Z][0-9OI]{2}[\-\s][A-Z]{2}[\-\s][0-9OI]{1,2}\b
+// findPostcodeCandidates matches embedded 5-segment NIPOST postcode candidates (delimited or compact):
 func findPostcodeCandidates(s string) []string {
 	var out []string
 	n := len(s)
@@ -314,6 +347,18 @@ func findPostcodeCandidates(s string) []string {
 		if i > 0 && isWordChar(s[i-1]) {
 			continue
 		}
+		// 1. Check compact 11-character postcode (e.g. "EK01A03FK01")
+		if i+11 <= n && (i+11 == n || !isWordChar(s[i+11])) {
+			cand := s[i : i+11]
+			if p, err := Parse(cand); err == nil {
+				if _, ok := NigerianStates[string(p.raw[0:2])]; ok {
+					out = append(out, cand)
+					i += 10
+					continue
+				}
+			}
+		}
+
 		p := i
 		letters := 0
 		for p < n && isASCIILetter(s[p]) && letters < 4 {

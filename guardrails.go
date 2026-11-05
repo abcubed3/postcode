@@ -112,6 +112,13 @@ func (g *agentGuardState) recordDowngrade() {
 	}
 }
 
+func (g *agentGuardState) rollbackCommercialToLevel1() {
+	if g != nil {
+		g.commercialCalls.Add(-1)
+		g.downgradedCalls.Add(1)
+	}
+}
+
 func (g *agentGuardState) metrics() AgentGuardMetrics {
 	if g == nil {
 		return AgentGuardMetrics{}

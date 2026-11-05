@@ -45,6 +45,8 @@ type Client struct {
 	cache         Cache
 	agentGuard    *agentGuardState
 	geocoder      Geocoder
+	inflightMu    sync.Mutex
+	inflight      map[string]*inflightLookup
 }
 
 // NewClient instantiates a production-tuned HTTP client.
@@ -289,6 +291,17 @@ func (c *Client) RateLimit() *RateLimitInfo {
 	return c.rateLimit.Load()
 }
 
+func isSecureOrLoopbackURL(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	if u.Scheme == "https" {
+		return true
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
 func (c *Client) execute(ctx context.Context, method string, pathParts []string, q url.Values, reqBody any, dst any) error {
 	u := c.baseURL.JoinPath(pathParts...)
 	if len(q) > 0 {
@@ -301,7 +314,8 @@ func (c *Client) execute(ctx context.Context, method string, pathParts []string,
 
 	span.SetAttribute("http.request.method", method)
 	span.SetAttribute("server.address", u.Hostname())
-	span.SetAttribute("url.full", u.String())
+	span.SetAttribute("url.path", endpointPath)
+	span.SetAttribute("url.scheme", u.Scheme)
 
 	var bodyReader io.Reader = http.NoBody
 	if reqBody != nil {
@@ -325,6 +339,11 @@ func (c *Client) execute(ctx context.Context, method string, pathParts []string,
 	}
 
 	if c.apiKey != "" {
+		if !isSecureOrLoopbackURL(u) {
+			err := fmt.Errorf("postcode: refusing to transmit X-API-Key over insecure %s:// to non-loopback host %s", u.Scheme, u.Hostname())
+			span.RecordError(err)
+			return err
+		}
 		req.Header.Set("X-API-Key", c.apiKey)
 	}
 
@@ -399,7 +418,7 @@ func (c *Client) execute(ctx context.Context, method string, pathParts []string,
 		var env struct {
 			Data json.RawMessage `json:"data"`
 		}
-		if err := json.Unmarshal(buf.Bytes(), &env); err == nil && len(env.Data) > 0 && string(env.Data) != "null" {
+		if err := json.Unmarshal(buf.Bytes(), &env); err == nil && len(env.Data) > 0 && !bytes.Equal(bytes.TrimSpace(env.Data), []byte("null")) {
 			if err := json.Unmarshal(env.Data, dst); err != nil {
 				span.RecordError(err)
 				return fmt.Errorf("postcode: decode response payload: %w", err)
