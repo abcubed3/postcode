@@ -95,9 +95,15 @@ func loadDiskCacheLocked() error {
 
 	customMu.Lock()
 	for _, rec := range records {
+		if len(customBuildings) >= maxCustomBuildings {
+			break
+		}
 		if parsed, err := Parse(rec.Postcode); err == nil {
-			customBuildings[parsed.Raw()] = rec
+			rec.Postcode = parsed.Formatted()
+			rec.compact = parsed.Raw()
+			customBuildings[rec.compact] = rec
 		} else {
+			rec.compact = rec.Postcode
 			customBuildings[rec.Postcode] = rec
 		}
 	}
@@ -114,7 +120,7 @@ func SaveDiskCache() error {
 	path := getActiveCachePathLocked()
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -130,13 +136,31 @@ func SaveDiskCache() error {
 		return fmt.Errorf("marshaling cache records: %w", err)
 	}
 
-	tmpFile := path + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	f, err := os.CreateTemp(dir, ".postcode-cache-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating cache tempfile: %w", err)
+	}
+	tmpFile := f.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpFile)
+		}
+	}()
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("writing cache tempfile: %w", err)
 	}
+	_ = f.Chmod(0600)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing cache tempfile: %w", err)
+	}
+
 	if err := os.Rename(tmpFile, path); err != nil {
 		return fmt.Errorf("finalizing cache file: %w", err)
 	}
+	cleanup = false
 
 	return nil
 }
@@ -173,9 +197,13 @@ func GetCacheStats() (int, string) {
 
 // LoadBuildingsJSON reads building records from a JSON array or object reader and stores them in cache.
 func LoadBuildingsJSON(r io.Reader) (int, error) {
-	data, err := io.ReadAll(r)
+	const maxImportBytes = 10 * 1024 * 1024 // 10MB safety ceiling
+	data, err := io.ReadAll(io.LimitReader(r, maxImportBytes+1))
 	if err != nil {
 		return 0, fmt.Errorf("reading json: %w", err)
+	}
+	if len(data) > maxImportBytes {
+		return 0, fmt.Errorf("reading json: input exceeds 10MB limit")
 	}
 
 	var records []BuildingRecord

@@ -1,7 +1,13 @@
 package postcode
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -379,6 +385,94 @@ func TestNDPAMaskingAndRedaction(t *testing.T) {
 	}
 	if red.PIIRedactedCount < 4 {
 		t.Errorf("expected at least 4 PII redactions (unit, phone, email, nin/bvn), got %d (%+v)", red.PIIRedactedCount, red)
+	}
+
+	// Compact 11-char postcode, duplicate postcodes, formatted NIN, and (+234) phone
+	rawEdge := "Codes EK01A03FK01 and EK-01-A03-FK-01, phone (+234) 803 123 4567, NIN 221 2345 6789"
+	redEdge := RedactPII(rawEdge)
+	if strings.Contains(redEdge.RedactedText, "EK01A03FK01") || strings.Contains(redEdge.RedactedText, "FK-01") {
+		t.Errorf("expected compact and hyphenated postcodes to be masked, got %q", redEdge.RedactedText)
+	}
+	if strings.Contains(redEdge.RedactedText, "803 123 4567") {
+		t.Errorf("expected parenthesized (+234) phone to be redacted, got %q", redEdge.RedactedText)
+	}
+	if strings.Contains(redEdge.RedactedText, "221 2345 6789") {
+		t.Errorf("expected space-separated NIN to be redacted, got %q", redEdge.RedactedText)
+	}
+	if redEdge.PIIRedactedCount != 4 {
+		t.Errorf("expected exact PIIRedactedCount = 4 (2 postcodes + 1 phone + 1 NIN), got %d (%+v)", redEdge.PIIRedactedCount, redEdge)
+	}
+}
+
+type failingRoundTripper struct {
+	err error
+}
+
+func (f failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, f.err
+}
+
+func TestSecurityHardening(t *testing.T) {
+	// 1. Refuse sending X-API-Key over plain HTTP to non-loopback host
+	cInsecure, err := NewClient(
+		WithBaseURL("http://api.postcode.gov.ng"),
+		WithAPIKey("secret_live_key_123"),
+		WithHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})),
+	)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	_, err = cInsecure.Lookup(context.Background(), "EK-01-A03-FK-01", Level2)
+	if err == nil || !strings.Contains(err.Error(), "refusing to transmit X-API-Key over insecure http://") {
+		t.Errorf("expected insecure HTTP API key error, got %v", err)
+	}
+
+	// 2. GoogleMapsGeocoder redacts APIKey from transport error strings
+	secretKey := "AIzaSySecretTestKey999"
+	geo := &GoogleMapsGeocoder{
+		APIKey: secretKey,
+		HTTPClient: &http.Client{
+			Transport: failingRoundTripper{
+				err: errors.New("Get \"https://maps.googleapis.com/maps/api/geocode/json?key=" + secretKey + "\": dial tcp: i/o timeout"),
+			},
+		},
+	}
+	_, _, err = geo.Geocode(context.Background(), "Ado Ekiti")
+	if err == nil {
+		t.Fatalf("expected error from failing geocoder transport")
+	}
+	if strings.Contains(err.Error(), secretKey) {
+		t.Errorf("expected APIKey to be redacted from error string, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Errorf("expected [REDACTED] placeholder in geocoder error, got %q", err.Error())
+	}
+
+	// 3. LoadBuildingsJSON enforces 10 MB size limit
+	oversized := bytes.NewReader(bytes.Repeat([]byte("a"), 10*1024*1024+10))
+	if _, err := LoadBuildingsJSON(oversized); err == nil || !strings.Contains(err.Error(), "exceeds 10MB limit") {
+		t.Errorf("expected LoadBuildingsJSON size limit error, got %v", err)
+	}
+
+	// 4. SaveDiskCache writes 0600 file permissions safely
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "cache", "buildings.json")
+	prevPath := GetCachePath()
+	defer func() { _ = SetCachePath(prevPath) }()
+	if err := SetCachePath(cachePath); err != nil {
+		t.Fatalf("SetCachePath failed: %v", err)
+	}
+	if err := SaveDiskCache(); err != nil {
+		t.Fatalf("SaveDiskCache failed: %v", err)
+	}
+	info, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatalf("Stat(%q) failed: %v", cachePath, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("SaveDiskCache file permissions = %04o, want 0600", perm)
 	}
 }
 
