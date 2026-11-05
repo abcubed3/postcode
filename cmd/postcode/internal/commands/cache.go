@@ -43,11 +43,11 @@ enabling instant offline resolution on subsequent queries.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			count, path := postcode.GetCacheStats()
 			if count == 0 {
-				fmt.Printf("Cache is empty (%s)\n", path)
+				fmt.Fprintf(cmd.OutOrStdout(), "Cache is empty (%s)\n", path)
 				return nil
 			}
-			fmt.Printf("Cached Building Records (%d entries in %s):\n", count, path)
-			fmt.Println("--------------------------------------------------------------------------------")
+			fmt.Fprintf(cmd.OutOrStdout(), "Cached Building Records (%d entries in %s):\n", count, path)
+			fmt.Fprintln(cmd.OutOrStdout(), "--------------------------------------------------------------------------------")
 			return postcode.ExportBuildingsJSON(cmd.OutOrStdout())
 		},
 	}
@@ -74,7 +74,7 @@ enabling instant offline resolution on subsequent queries.`,
 				return fmt.Errorf("importing data from %s: %w", filePath, err)
 			}
 
-			fmt.Printf("✓ Successfully imported %d building record(s) into local cache (%s)\n", imported, postcode.GetCachePath())
+			fmt.Fprintf(cmd.OutOrStdout(), "✓ Successfully imported %d building record(s) into local cache (%s)\n", imported, postcode.GetCachePath())
 			return nil
 		},
 	}
@@ -86,7 +86,7 @@ enabling instant offline resolution on subsequent queries.`,
 			if err := postcode.ClearDiskCache(); err != nil {
 				return fmt.Errorf("clearing cache: %w", err)
 			}
-			fmt.Println("✓ Local postcode cache cleared.")
+			fmt.Fprintln(cmd.OutOrStdout(), "✓ Local postcode cache cleared.")
 			return nil
 		},
 	}
