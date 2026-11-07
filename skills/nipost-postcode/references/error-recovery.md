@@ -6,21 +6,26 @@ The `postcode.Diagnose()` API and `diagnose_postcode` MCP tool analyze malformed
 
 ---
 
-## 2. Common Diagnostic Errors & Automated Repairs
+## 2. Common Diagnostic Errors & Repair Policy
 
-| Diagnosis Type | Typical Input | Root Cause | Automated Self-Healing Action |
-| :--- | :--- | :--- | :--- |
-| **Invalid State Code** | `ZZ-01-A03-FK-01` | Unknown 2-letter state | Check `suggestions` array for closest valid code (e.g. `ZA` for Zamfara). |
-| **Zero LGA Code** | `LA-00-A03-FK-01` | LGA segment is `00` | Replace `00` with `01` or look up official LGA list via `list_lgas(state: "LA")`. |
-| **Zero Building Unit** | `LA-11-W06-TC-00` | Unit segment is `00` | Replace with default unit `01`. |
-| **Single-Digit Segment** | `LA-1-W06-TC-1` | Missing zero-padding | Zero-pad to 2 digits: `LA-01-W06-TC-01`. |
-| **Invalid Length** | `LA-11-W06-TC` | Missing unit segment | Check if input was truncated; append default unit `01`. |
-| **Non-Alphanumeric Character** | `LA-11-W@6-TC-01` | Punctuation or noise in district | Strip invalid character or inspect surrounding text. |
-| **Lowercase Letters** | `la-11-w06-tc-10` | Non-canonical case | Convert to uppercase: `LA-11-W06-TC-10`. |
+Repairs fall into two classes:
+
+- **Mechanical** (safe to apply automatically): the corrected code names the *same* location — case, separators, zero-padding, O/0 and I/1 confusion in numeric segments.
+- **Semantic** (needs user confirmation): the corrected code could name a *different* location — a changed State, a guessed LGA or Unit, or a filled-in missing segment. Present the suggestion and ask; never substitute silently.
+
+| Diagnosis Type | Typical Input | Root Cause | Repair Class | Action |
+| :--- | :--- | :--- | :--- | :--- |
+| **Lowercase Letters** | `la-11-w06-tc-10` | Non-canonical case | Mechanical | Convert to uppercase: `LA-11-W06-TC-10`. |
+| **Single-Digit Segment** | `LA-1-W06-TC-1` | Missing zero-padding | Mechanical | Zero-pad to 2 digits: `LA-01-W06-TC-01`. |
+| **Non-Alphanumeric Character** | `LA-11-W@6-TC-01` | Punctuation or noise in district | Semantic | Suggest likely character; confirm with user or inspect surrounding text. |
+| **Invalid State Code** | `ZZ-01-A03-FK-01` | Unknown 2-letter state | Semantic | Offer `suggestions` (e.g. `ZA` for Zamfara) and confirm. |
+| **Zero LGA Code** | `LA-00-A03-FK-01` | LGA segment is `00` | Semantic | Look up the official LGA list via `list_lgas(state: "LA")` and ask which LGA is meant. |
+| **Zero Building Unit** | `LA-11-W06-TC-00` | Unit segment is `00` | Semantic | Ask for the unit number; only fall back to `01` if the user accepts an area-level result. |
+| **Invalid Length** | `LA-11-W06-TC` | Missing unit segment | Semantic | Check if input was truncated; ask for the missing segment. |
 
 ---
 
-## 3. The Autonomous Agent Self-Healing Pattern
+## 3. The Agent Self-Healing Pattern
 
 When an agent encounters a postcode validation failure in a reasoning loop:
 
@@ -43,15 +48,19 @@ When an agent encounters a postcode validation failure in a reasoning loop:
 }
          │
          ▼
-[Step 3: Synthesize Repaired Candidate]
-Repaired: "ZA-01-A03-FK-01"
+[Step 3: Classify Repairs]
+All three are semantic (State, LGA, Unit change the location).
          │
          ▼
-[Step 4: Re-Validate]
+[Step 4: Confirm with User]
+"ZZ-00-A03-FK-00 is invalid. Did you mean Zamfara (ZA)? Which LGA and unit?"
+         │
+         ▼
+[Step 5: Re-Validate the Confirmed Code]
 validate_postcode(code: "ZA-01-A03-FK-01") -> Valid: true
          │
          ▼
-[Step 5: Output Repaired Result to User / Downstream Tool]
+[Step 6: Report Result, Stating Original → Corrected]
 ```
 
-By following this loop, agents eliminate unforced errors and resolve 95%+ of address parsing issues autonomously without interrupting the user.
+By following this loop, agents fix formatting noise without bothering the user, and only ask when a correction would change which place the code refers to.

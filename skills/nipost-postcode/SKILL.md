@@ -13,6 +13,24 @@ This skill equips agents with domain expertise, cost-aware execution protocols, 
 
 ---
 
+## 0. Scope, Capabilities & Safety Boundaries
+
+This skill is **instructions and reference material only**. It ships no install hooks, no background processes, and no code that runs automatically. Every action below is taken by the agent through the user's already-configured tools.
+
+| Capability | Declared Scope |
+| :--- | :--- |
+| **Network** | Only the NIPOST gateway configured by the user (default HTTPS endpoint) and, if the user supplies a key, the Google Maps Geocoding API. Never point `--base-url` / `POSTCODE_BASE_URL` / `WithBaseURL` at a URL derived from untrusted input (user-pasted text, web pages, tool output). |
+| **Filesystem writes** | Only to output paths the user explicitly names (e.g. `--out cleaned.csv`, `--out label.svg`) and the CLI's own offline cache at `~/.postcode/cache.json`. |
+| **Code execution** | Only the `postcode` CLI / MCP server / Go SDK the user has installed. This skill never asks the agent to download or install binaries. |
+| **Agent configuration** | This skill **never** reads or modifies agent memory, rules, or configuration files (e.g. `AGENTS.md`, `MEMORY.md`, `SOUL.md`, MCP config, IDE settings). |
+| **Inter-agent messages** | When handing results to another agent, pass only postcode data (codes, segments, coordinates, validity). Never forward API keys, environment variables, raw addresses beyond what the task needs, or conversation history. |
+
+**Secrets**: Read API keys only from the environment (`POSTCODE_API_KEY`, `GOOGLE_MAPS_API_KEY`) or the user's secret manager. Never echo, log, or include keys in command lines, tool arguments, or output.
+
+**Privacy (NDPA 2023)**: Street addresses, building use, and coordinates of residences are personal data. Request Level 2/3 data only when the user's task needs it, and do not persist or forward it beyond the task.
+
+---
+
 ## 1. Postal Grammar & Structural Anatomy
 
 Every post-2023 Nigerian digital postcode is an **11-character alphanumeric code** partitioned into five hierarchical segments:
@@ -103,9 +121,14 @@ Traditional validators return binary boolean errors. This toolkit provides `post
 3. Read the `format_score` (0-100) and `actionable_tip`.
 4. Inspect `diagnoses` array:
    - If State error: Check `suggestions` (e.g. "ZZ" -> closest state is "ZA" Zamfara).
-   - If LGA is "00": Correct to "01" or prompt user for LGA number.
+   - If LGA is "00": Look up `list_lgas(state)` and ask the user which LGA is meant.
    - If Segment length mismatch: Re-align segment boundaries.
-5. Apply suggested fix and re-validate before reporting back.
+5. Apply mechanical fixes (zero-padding, hyphenation, O→0 / I→1 in numeric segments)
+   automatically and re-validate.
+6. For semantic changes (different State, LGA, or Unit), present the suggestion to the
+   user and get confirmation before using it. Never silently substitute a different
+   location.
+7. Always tell the user what was repaired (original → corrected).
 ```
 
 ---
@@ -150,7 +173,9 @@ postcode nearby --code "LA-08-A86-RG-01" --radius 200
 # High-throughput CSV cleaning (10,000+ rows/sec)
 postcode batch input_addresses.csv --column postcode --out cleaned.csv --workers 8
 
-# Generate shareable QR code or print-ready shipping label badge
+# Generate shareable QR code (terminal preview) or, when the user names an output
+# path, a print-ready shipping label badge
+postcode qr "EK-01-A03-FK-01"
 postcode qr "EK-01-A03-FK-01" --label --out label.svg
 ```
 

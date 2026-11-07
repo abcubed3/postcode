@@ -1,22 +1,37 @@
 #!/usr/bin/env bash
 # Nigerian Postcode CLI Workflow Recipes
-# Prerequisite: postcode CLI installed (`go install github.com/abcubed3/postcode/cmd/postcode@latest`)
+#
+# Prerequisite: the postcode CLI is already installed by the user, pinned to a
+# reviewed release, e.g.:
+#   go install github.com/abcubed3/postcode/cmd/postcode@v0.2.6
+# This script does not install anything. It only calls the local `postcode`
+# binary, and the only files it writes go to a private temp directory
+# (override with OUT_DIR=...).
 
 set -euo pipefail
+
+command -v postcode >/dev/null 2>&1 || {
+  echo "postcode CLI not found on PATH; install a pinned release first." >&2
+  exit 1
+}
+
+OUT_DIR="${OUT_DIR:-$(mktemp -d)}"
+echo "Writing generated artifacts to: ${OUT_DIR}"
 
 echo "=== 1. Offline Validation & Formatting ==="
 # Fast local validation (exit code 0 if valid, non-zero if invalid)
 postcode validate "LA-11-W06-TC-10"
 
 # Convert compact or spaced code to canonical hyphenated format
-postcode format "LA 11 W06 TC 10" --canonical
+postcode format "LA 11 W06 TC 10" --style canonical
 
 # Parse into JSON for downstream shell processing
 postcode parse "EK01A03FK01" --format json
 
 echo "=== 2. Offline Diagnostics & Typo Recovery ==="
-# Diagnose malformed postcode with actionable suggestion tips
-postcode diagnose "ZZ-00-A03-FK-00" --format json
+# Diagnose malformed postcode with actionable suggestion tips.
+# Exits non-zero for invalid input, so don't abort the script here.
+postcode diagnose "ZZ-00-A03-FK-00" --format json || true
 
 echo "=== 3. Offline Centroid Coordinates & Maps ==="
 # Get latitude/longitude without any network calls
@@ -33,21 +48,25 @@ postcode reverse --lat 6.4281 --lng 3.4219 --format json
 postcode nearby --code "LA-08-A86-RG-01" --radius 200 --format json
 
 echo "=== 5. NIPOST Gateway Live Lookup (Cost-Aware) ==="
-# Level 1: Free / Public validity check (0 credits)
+# Level 1: Free / Public validity check (0 credits).
+# Reads POSTCODE_API_KEY from the environment; never pass keys on the command line.
 postcode lookup "EK-01-A03-FK-01" --level 1 --format json
 
 # Level 2: Commercial address retrieval (1 credit) - use only when street name needed
 # postcode lookup "LA-11-W06-TC-10" --level 2 --format json
 
 echo "=== 6. High-Throughput Batch Processing ==="
-# Clean and enrich 50,000+ CSV records using multi-threaded worker pools
-# postcode batch raw_customers.csv --column postcode --out verified_customers.csv --workers 8
+# Clean and enrich CSV records using concurrent workers
+# postcode batch raw_customers.csv --column postcode --out "${OUT_DIR}/verified_customers.csv" --workers 8
 
 echo "=== 7. Starting the MCP Server ==="
-# Launch stdio MCP server for Claude Desktop / Cursor / Antigravity
-# POSTCODE_API_KEY="your-key" postcode mcp
+# Launch stdio MCP server for Claude Desktop / Cursor / Antigravity.
+# Export POSTCODE_API_KEY from your secret manager beforehand rather than
+# typing it inline (inline keys end up in shell history).
+# postcode mcp
 
 echo "=== 8. Shareable & Printable QR Codes ==="
-# Generate terminal preview and printable NIPOST delivery badge SVG
-postcode qr "EK-01-A03-FK-01" --label --out ekiti-label.svg
+# Terminal preview (no files written)
 postcode qr "LA-11-W06-TC-10" --payload directions
+# Printable NIPOST delivery badge SVG, written only inside OUT_DIR
+postcode qr "EK-01-A03-FK-01" --label --out "${OUT_DIR}/ekiti-label.svg"
