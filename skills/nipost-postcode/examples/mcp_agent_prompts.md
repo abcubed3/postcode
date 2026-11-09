@@ -63,13 +63,12 @@ Here are reference interaction patterns between users and autonomous agents conn
      ]
    }
    ```
-3. *Self-Correction: Agent infers intended code was likely Zamfara state (`ZA-01-A03-FK-01`).*
-4. *Tool 3: `validate_postcode` with repaired code `ZA-01-A03-FK-01`*
-   *Result*: `{"valid": true}`
-5. *Tool 4: `resolve_location` on `ZA-01-A03-FK-01`*
+3. *Classify repairs: changing State `ZZ`→`ZA` and LGA `00`→? would change the location, so they are semantic repairs that need confirmation.*
 
 **Agent Output**:
-> "The code `ZZ-00-A03-FK-01` was invalid (unknown state 'ZZ' and illegal LGA '00'). I diagnosed this and repaired it to `ZA-01-A03-FK-01` (Zamfara State). Its coordinates are..."
+> "The code `ZZ-00-A03-FK-01` is invalid: 'ZZ' isn't a state code, and LGA '00' isn't allowed. The closest state is `ZA` (Zamfara). Did you mean Zamfara, and if so, which LGA? If you confirm `ZA-01-A03-FK-01`, I'll geocode it."
+
+**After user confirms** → `validate_postcode("ZA-01-A03-FK-01")` → `resolve_location("ZA-01-A03-FK-01")`, and the reply states the correction: "`ZZ-00-A03-FK-01` → `ZA-01-A03-FK-01` (confirmed by you)."
 
 ---
 
@@ -81,8 +80,8 @@ Here are reference interaction patterns between users and autonomous agents conn
 **Agent Reasoning & Tool Calls**:
 1. *Tool 1: `list_states`* $\to$ identifies Lagos as `LA`.
 2. *Tool 2: `list_lgas` with `state: "LA"`* $\to$ identifies Victoria Island falls under Eti-Osa LGA (code `08` or `11`).
-3. *Tool 3: Coordinates for Eko Hotel (approx 6.4281, 3.4219).*
-4. *Tool 4: `reverse_geocode`*
+3. *Coordinates for Eko Hotel: use coordinates the user provided, or a geocoder the user has configured (e.g. Google Maps with their key). Don't invent coordinates from memory.*
+4. *Tool 3: `reverse_geocode`*
    ```json
    {
      "latitude": 6.4281,
@@ -93,4 +92,4 @@ Here are reference interaction patterns between users and autonomous agents conn
    *Result*: Snapped unit `LA-08-A86-RG-01`.
 
 **Agent Output**:
-> "Based on cadastral mapping for Eko Hotel on Adetokunbo Ademola Street (Victoria Island, Eti-Osa LGA, Lagos), the verified digital postcode is **`LA-08-A86-RG-01`**."
+> "The nearest registered delivery unit to those coordinates (Eko Hotel area, Victoria Island, Eti-Osa LGA, Lagos) is **`LA-08-A86-RG-01`**. This is a proximity match, so please confirm it's your building before using it for deliveries."
